@@ -556,3 +556,255 @@ svg {
         font-size: 18px !important;
     }
 }
+
+/* =========================================================
+   FAMILYHERO ADMIN MOBILE FINAL OVERRIDES
+   Keep this block at the VERY END of style.css
+   ========================================================= */
+@media (max-width: 900px) {
+    .admin-layout {
+        display: block !important;
+        width: 100% !important;
+        min-width: 0 !important;
+    }
+
+    .workspace {
+        display: block !important;
+        width: 100% !important;
+        min-width: 0 !important;
+        margin: 0 !important;
+    }
+
+    .sidebar {
+        position: fixed !important;
+        top: 0 !important;
+        left: -230px !important;
+        width: 218px !important;
+        max-width: 84vw !important;
+        height: 100dvh !important;
+        z-index: 1100 !important;
+        overflow-y: auto !important;
+        transition: left .22s ease !important;
+    }
+
+    .sidebar.open {
+        left: 0 !important;
+    }
+
+    .menu-btn {
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        border: 0 !important;
+        background: transparent !important;
+        color: #fff !important;
+        font-size: 21px !important;
+        padding: 6px !important;
+    }
+
+    .topbar {
+        width: 100% !important;
+        min-width: 0 !important;
+        height: 52px !important;
+        padding: 0 12px !important;
+    }
+
+    .admin-content {
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+        margin: 0 !important;
+        padding: 14px 12px 32px !important;
+        overflow-x: hidden !important;
+    }
+
+    .admin-content > * {
+        max-width: 100% !important;
+        min-width: 0 !important;
+    }
+
+    .admin-page-head,
+    .page-title-row,
+    .page-heading,
+    .fh-page-heading,
+    .fh-admin-heading {
+        display: block !important;
+        width: 100% !important;
+    }
+
+    .child-switch {
+        width: 100% !important;
+        margin-top: 12px !important;
+    }
+
+    .child-switch select {
+        width: 100% !important;
+        min-width: 0 !important;
+    }
+
+    .metric-grid,
+    .content-grid,
+    .report-grid,
+    .reward-columns,
+    .simple-grid,
+    .fh-config-overview,
+    .fh-category-layout,
+    .category-layout {
+        grid-template-columns: minmax(0, 1fr) !important;
+        width: 100% !important;
+        min-width: 0 !important;
+    }
+
+    .metric-card,
+    .card,
+    .panel-section,
+    .surface-card,
+    .fh-config-card,
+    .fh-admin-category,
+    .tile-card,
+    .entity-card {
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+    }
+
+    .config-tabs {
+        width: 100% !important;
+        overflow-x: auto !important;
+        flex-wrap: nowrap !important;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .config-tabs a {
+        flex: 0 0 auto !important;
+        white-space: nowrap !important;
+    }
+
+    .panel-head,
+    .fh-section-head,
+    .card-header,
+    .section-head,
+    .profile-hero {
+        display: block !important;
+    }
+
+    .panel-head > *,
+    .fh-section-head > *,
+    .card-header > *,
+    .section-head > * {
+        max-width: 100% !important;
+    }
+
+    .fh-section-actions {
+        width: 100% !important;
+        margin-top: 10px !important;
+        justify-content: flex-start !important;
+        flex-wrap: wrap !important;
+    }
+
+    .create-pop {
+        max-width: 100% !important;
+    }
+
+    .create-pop[open] > form {
+        position: static !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        margin-top: 8px !important;
+    }
+
+    .category-index,
+    .fh-category-index {
+        display: none !important;
+    }
+
+    .category-content,
+    .fh-category-content {
+        width: 100% !important;
+        min-width: 0 !important;
+        padding: 10px !important;
+    }
+
+    .edit-grid {
+        grid-template-columns: minmax(0, 1fr) !important;
+        width: 100% !important;
+    }
+
+    .filter-bar {
+        display: grid !important;
+        grid-template-columns: minmax(0, 1fr) !important;
+        width: 100% !important;
+    }
+
+    .field-row {
+        grid-template-columns: minmax(0, 1fr) !important;
+    }
+
+    .kpi-row {
+        display: grid !important;
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        width: 100% !important;
+        overflow: visible !important;
+        gap: 8px !important;
+    }
+
+    .kpi-row > div {
+        border-left: 0 !important;
+        border: 1px solid var(--fh-border) !important;
+        padding: 10px !important;
+    }
+
+    .children-table {
+        width: 100% !important;
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .table-head,
+    .table-row {
+        min-width: 620px !important;
+    }
+
+    .reward-grant-row,
+    .activity-row,
+    .history-row {
+        min-width: 0 !important;
+    }
+
+    input,
+    select,
+    textarea,
+    button {
+        max-width: 100% !important;
+    }
+}
+
+@media (max-width: 520px) {
+    .metric-grid {
+        grid-template-columns: minmax(0, 1fr) !important;
+    }
+
+    .kpi-row {
+        grid-template-columns: minmax(0, 1fr) !important;
+    }
+
+    .admin-page-head h1,
+    .page-title-row h1,
+    .page-heading h1,
+    .fh-admin-heading h1 {
+        font-size: 20px !important;
+    }
+
+    .topbar > a {
+        font-size: 10px !important;
+    }
+
+    .fh-config-overview {
+        gap: 8px !important;
+    }
+
+    .fh-config-card {
+        min-height: 68px !important;
+        padding: 10px 12px !important;
+    }
+}
