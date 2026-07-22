@@ -357,3 +357,202 @@ svg {
         width: 100%;
     }
 }
+
+/* =========================================================
+   FAMILYHERO MOBILE FINAL OVERRIDES
+   Keep this block at the VERY END of style.css
+   ========================================================= */
+@media (max-width: 900px) {
+    html, body {
+        width: 100% !important;
+        max-width: 100% !important;
+        overflow-x: hidden !important;
+    }
+
+    .child-shell {
+        display: block !important;
+        width: 100% !important;
+        min-width: 0 !important;
+    }
+
+    .child-workspace {
+        display: block !important;
+        width: 100% !important;
+        min-width: 0 !important;
+        margin: 0 !important;
+    }
+
+    .child-topbar {
+        width: 100% !important;
+        min-width: 0 !important;
+        height: 52px !important;
+        padding: 0 12px !important;
+    }
+
+    .child-content {
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+        margin: 0 !important;
+        padding: 14px 12px 32px !important;
+    }
+
+    .child-content > * {
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+    }
+
+    .child-sidebar {
+        position: fixed !important;
+        top: 0 !important;
+        left: -230px !important;
+        width: 218px !important;
+        max-width: 84vw !important;
+        height: 100dvh !important;
+        z-index: 1000 !important;
+        overflow-y: auto !important;
+        transition: left .22s ease !important;
+    }
+
+    .child-sidebar.open {
+        left: 0 !important;
+    }
+
+    .child-menu-toggle {
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+    }
+
+    .hero-dashboard-banner {
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+        min-height: 150px !important;
+        padding: 20px 18px !important;
+        overflow: hidden !important;
+    }
+
+    .hero-dashboard-banner > div:first-child {
+        width: 72% !important;
+        max-width: 72% !important;
+        min-width: 0 !important;
+    }
+
+    .hero-dashboard-banner h1 {
+        font-size: 22px !important;
+        line-height: 1.15 !important;
+        overflow-wrap: anywhere !important;
+    }
+
+    .hero-dashboard-banner p {
+        max-width: 100% !important;
+        font-size: 12px !important;
+        line-height: 1.45 !important;
+    }
+
+    .hero-character {
+        position: absolute !important;
+        right: 8px !important;
+        bottom: 10px !important;
+        margin: 0 !important;
+        font-size: 54px !important;
+        opacity: .72 !important;
+        pointer-events: none !important;
+    }
+
+    .child-metric-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        gap: 9px !important;
+    }
+
+    .child-metric-grid article,
+    .dashboard-columns,
+    .surface-card,
+    .badge-page-grid,
+    .reward-page-grid,
+    .goal-preview-grid {
+        min-width: 0 !important;
+        max-width: 100% !important;
+    }
+
+    .dashboard-columns,
+    .badge-page-grid,
+    .reward-page-grid,
+    .goal-preview-grid {
+        grid-template-columns: minmax(0, 1fr) !important;
+    }
+
+    .fh-page-heading,
+    .child-page-head.split {
+        display: block !important;
+    }
+
+    .fh-page-summary,
+    .score-pill {
+        width: 100% !important;
+        margin-top: 10px !important;
+    }
+
+    .fh-category-header,
+    .fh-task-title-row,
+    .surface-head {
+        min-width: 0 !important;
+    }
+
+    .fh-category-stats {
+        flex-shrink: 1 !important;
+        min-width: 0 !important;
+    }
+
+    input, select, textarea, button {
+        max-width: 100% !important;
+    }
+}
+
+@media (max-width: 480px) {
+    .topbar-user b {
+        display: none !important;
+    }
+
+    .hero-dashboard-banner {
+        min-height: 142px !important;
+        padding: 18px 16px !important;
+    }
+
+    .hero-dashboard-banner > div:first-child {
+        width: 76% !important;
+        max-width: 76% !important;
+    }
+
+    .hero-dashboard-banner h1 {
+        font-size: 20px !important;
+    }
+
+    .hero-dashboard-banner p {
+        font-size: 11px !important;
+        margin-bottom: 12px !important;
+    }
+
+    .hero-cta {
+        padding: 8px 10px !important;
+        font-size: 10px !important;
+    }
+
+    .hero-character {
+        font-size: 46px !important;
+        right: 5px !important;
+        bottom: 8px !important;
+    }
+
+    .child-metric-grid article {
+        padding: 10px !important;
+    }
+
+    .child-metric-grid strong {
+        font-size: 18px !important;
+    }
+}
