@@ -1,0 +1,19 @@
+<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{% block title %}FamilyHero{% endblock %}</title><link rel="stylesheet" href="{{ url_for('static',filename='style.css') }}?v=300"></head>
+<body class="child-shell-body"><div class="child-shell">
+<aside class="child-sidebar" id="childSidebar">
+  <a class="child-brand" href="{{ url_for('dashboard') }}"><span class="child-brand-mark">F</span><span><strong>FamilyHero</strong><small>Kahraman alanı</small></span></a>
+  <div class="child-profile-mini"><div class="child-mini-avatar">{{ avatars.get(child.avatar_key,'🙂') }}</div><div><strong>{{ child.name }}</strong><small>{{ child.title }}</small></div></div>
+  <nav class="child-menu">
+    <span>MACERAM</span>
+    <a class="{% if request.endpoint=='dashboard' %}active{% endif %}" href="{{ url_for('dashboard') }}"><i>⌂</i> Kahraman Paneli</a>
+    <a class="{% if request.endpoint=='child_tasks' %}active{% endif %}" href="{{ url_for('child_tasks') }}"><i>✓</i> Bugünkü Görevler</a>
+    <span>GELİŞİMİM</span>
+    <a class="{% if request.endpoint=='child_badges' %}active{% endif %}" href="{{ url_for('child_badges') }}"><i>◇</i> Rozetlerim</a>
+    <a class="{% if request.endpoint=='child_rewards' %}active{% endif %}" href="{{ url_for('child_rewards') }}"><i>☆</i> Ödüllerim</a>
+    <a class="{% if request.endpoint=='choose_avatar' %}active{% endif %}" href="{{ url_for('choose_avatar') }}"><i>☺</i> Avatarım</a>
+  </nav>
+  <form class="child-logout" method="post" action="{{ url_for('logout') }}"><button>Çıkış yap</button></form>
+</aside>
+<section class="child-workspace"><header class="child-topbar"><button class="child-menu-toggle" onclick="document.getElementById('childSidebar').classList.toggle('open')">☰</button><div><small>FamilyHero</small><strong>{% block page_name %}Kahraman Paneli{% endblock %}</strong></div><div class="topbar-user"><span>{{ avatars.get(child.avatar_key,'🙂') }}</span><b>{{ child.name }}</b></div></header>
+<main class="child-content">{% for category,message in get_flashed_messages(with_categories=true) %}<div class="flash {{ category }}">{{ message }}</div>{% endfor %}{% block content %}{% endblock %}</main></section>
+</div></body></html>

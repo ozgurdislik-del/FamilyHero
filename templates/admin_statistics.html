@@ -1,0 +1,11 @@
+{% extends "admin_base.html" %}
+{% block title %}İstatistikler · FamilyHero{% endblock %}
+{% block content %}
+<div class="admin-page-head"><div><span class="eyebrow">TAKİP VE RAPORLAR</span><h1>30 günlük istatistikler</h1><p>Görev tamamlama ve puan eğilimlerini çocuk bazında inceleyin.</p></div></div>
+<form class="filter-bar" method="get"><label>Çocuk<select name="child_id" onchange="this.form.submit()">{% for c in children %}<option value="{{ c.id }}" {% if c.id==child_id %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select></label></form>
+{% if child %}
+<div class="stat-summary"><div><span>Dönem</span><strong>{{ start_date }} – {{ end_date }}</strong></div><div><span>Toplam puan</span><strong>{{ series|sum(attribute='score') }}</strong></div><div><span>Tamamlanan görev</span><strong>{{ series|sum(attribute='completed_count') }}</strong></div></div>
+<section class="panel-card"><div class="panel-heading"><div><h2>Günlük puan eğilimi</h2><p>Son 30 gün</p></div></div><div class="bar-chart">{% for item in series %}<div class="bar-column" title="{{ item.date }} · {{ item.score }} puan"><div class="bar" style="height: {{ (item.score / maximum * 100)|round }}%"></div><small>{{ item.date.strftime('%d') }}</small></div>{% endfor %}</div></section>
+<section class="panel-card"><div class="panel-heading"><div><h2>Kategori performansı</h2><p>Son 30 günde kazanılan puanlar</p></div></div>{% for category in categories %}<div class="category-stat"><div><strong>{{ category.category }}</strong><small>{{ category.completed_count }} görev</small></div><div class="category-meter"><span style="width: {{ (category.score / (categories[0].score if categories else 1) * 100)|round }}%"></span></div><b>{{ category.score }} puan</b></div>{% else %}<div class="empty-state">Bu dönemde veri bulunmuyor.</div>{% endfor %}</section>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,120 @@
+{% extends 'admin_base.html' %}
+{% block title %}Yapılandırma | FamilyHero{% endblock %}
+{% block breadcrumb %}Yapılandırma{% endblock %}
+{% block content %}
+<section class="admin-page-head fh-admin-heading">
+  <div>
+    <span class="eyebrow">YAPILANDIRMA</span>
+    <h1>Görev ve ödül sistemi</h1>
+    <p>Çocuğa özel görevleri, puanları, ödülleri ve hedefleri yönetin.</p>
+  </div>
+  <form method="get" class="child-switch">
+    <label>Profil seç
+      <select name="child_id" onchange="this.form.submit()">
+        {% for c in children %}<option value="{{ c.id }}" {% if c.id==child_id %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
+      </select>
+    </label>
+  </form>
+</section>
+
+{% if child %}
+<nav class="fh-config-overview" aria-label="Yapılandırma bölümleri">
+  <a class="fh-config-card fh-config-card--tasks" href="#tasks">
+    <span class="fh-config-icon">✓</span>
+    <span><small>Görevler</small><strong>{{ tasks|length }}</strong><em>Toplam görev</em></span>
+  </a>
+  <a class="fh-config-card fh-config-card--rewards" href="#rewards">
+    <span class="fh-config-icon">♢</span>
+    <span><small>Ödüller</small><strong>{{ rewards|length }}</strong><em>Tanımlı ödül</em></span>
+  </a>
+  <a class="fh-config-card fh-config-card--goals" href="#goals">
+    <span class="fh-config-icon">◎</span>
+    <span><small>Hedefler</small><strong>{{ goals|length }}</strong><em>Aktif hedef</em></span>
+  </a>
+</nav>
+
+<section id="tasks" class="panel-section fh-admin-section fh-admin-section--tasks">
+  <div class="panel-head fh-section-head">
+    <div class="fh-section-title-wrap">
+      <span class="fh-section-symbol">✓</span>
+      <div><span class="fh-section-kicker">GÖREV YÖNETİMİ</span><h2>Görevler</h2><p>Kategorilere göre düzenleyin. Bir görevi değiştirmek için satırı açın.</p></div>
+    </div>
+    <div class="fh-section-actions">
+      <button type="button" class="fh-ghost-btn" id="collapseAllGroups">Tümünü daralt</button>
+      <button type="button" class="fh-ghost-btn" id="expandAllGroups">Tümünü aç</button>
+      <details class="create-pop"><summary>＋ Yeni görev</summary><form method="post" action="{{ url_for('admin_task_add') }}"><input type="hidden" name="child_id" value="{{ child.id }}"><label>Kategori<input name="category" list="categories" required></label><datalist id="categories">{% for cat in categories %}<option value="{{ cat }}">{% endfor %}</datalist><label>Görev adı<input name="description" required></label><label>Puan<input name="points" type="number" min="0" value="10"></label><button>Görevi ekle</button></form></details>
+    </div>
+  </div>
+
+  <div class="category-layout fh-category-layout">
+    <aside class="category-index fh-category-index">
+      {% for cat in categories %}
+      {% set cat_lower = cat|lower %}
+      <a href="#cat-{{ loop.index }}" class="fh-cat-link fh-cat-link--{{ loop.index }}">
+        <span class="fh-cat-icon">{% if 'akıl' in cat_lower %}♟{% elif 'ekstra' in cat_lower %}★{% elif 'ev ' in cat_lower %}⌂{% elif 'sağlık' in cat_lower %}♥{% elif 'öğren' in cat_lower %}▤{% elif 'kalpli' in cat_lower %}♥{% else %}◆{% endif %}</span>
+        <div><strong>{{ cat }}</strong><small>{{ tasks|selectattr('category','equalto',cat)|list|length }} görev</small></div>
+        <i>⌄</i>
+      </a>
+      {% endfor %}
+    </aside>
+
+    <div class="category-content fh-category-content">
+      {% for cat in categories %}
+      {% set cat_tasks = tasks|selectattr('category','equalto',cat)|list %}
+      {% set cat_lower = cat|lower %}
+      <details class="category-panel fh-admin-category fh-admin-category--{{ loop.index }}" id="cat-{{ loop.index }}" {% if loop.first %}open{% endif %}>
+        <summary class="fh-admin-category-summary">
+          <div class="fh-admin-category-name">
+            <span class="fh-admin-category-icon">{% if 'akıl' in cat_lower %}♟{% elif 'ekstra' in cat_lower %}★{% elif 'ev ' in cat_lower %}⌂{% elif 'sağlık' in cat_lower %}♥{% elif 'öğren' in cat_lower %}▤{% elif 'kalpli' in cat_lower %}♥{% else %}◆{% endif %}</span>
+            <div><h3>{{ cat }}</h3><span>{{ cat_tasks|length }} görev</span></div>
+          </div>
+          <div class="fh-category-summary-actions">
+            <span class="fh-rename-label">Grubu yönet</span><i class="fh-chevron">⌄</i>
+          </div>
+        </summary>
+        <div class="fh-admin-category-body">
+          <div class="fh-rename-row">
+            <details><summary>✎ Grubu yeniden adlandır</summary><form method="post" action="{{ url_for('admin_category_rename') }}"><input type="hidden" name="child_id" value="{{ child.id }}"><input type="hidden" name="old_category" value="{{ cat }}"><input name="new_category" value="{{ cat }}"><button>Kaydet</button></form></details>
+          </div>
+          <div class="entity-cards fh-entity-cards">
+            {% for t in cat_tasks %}
+            <details class="entity-card fh-entity-card">
+              <summary>
+                <div class="entity-main"><span class="fh-drag">⠿</span><span class="entity-check">✓</span><div><strong>{{ t.description }}</strong><small>{{ t.points }} puan · {% if t.active %}<b>Aktif</b>{% else %}Pasif{% endif %}</small></div></div>
+                <div class="fh-row-tail"><span class="fh-admin-xp">+{{ t.points }} XP</span><span class="more">⋮</span></div>
+              </summary>
+              <form method="post" action="{{ url_for('admin_task_edit',task_id=t.id) }}" class="edit-grid"><input type="hidden" name="child_id" value="{{ child.id }}"><label>Görev adı<input name="description" value="{{ t.description }}"></label><label>Kategori<input name="category" value="{{ t.category }}"></label><label>Puan<input name="points" type="number" min="0" value="{{ t.points }}"></label><label class="toggle-field"><input type="checkbox" name="active" {% if t.active %}checked{% endif %}><span>Aktif görev</span></label><button>Değişiklikleri kaydet</button></form>
+            </details>
+            {% endfor %}
+          </div>
+        </div>
+      </details>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<section id="rewards" class="panel-section fh-admin-section fh-admin-section--rewards">
+  <div class="panel-head fh-section-head"><div class="fh-section-title-wrap"><span class="fh-section-symbol">♢</span><div><span class="fh-section-kicker">MOTİVASYON</span><h2>Ödüller</h2><p>Puan karşılığında sunulacak ödülleri yönetin.</p></div></div><details class="create-pop"><summary>＋ Yeni ödül</summary><form method="post" action="{{ url_for('admin_reward_add') }}"><input type="hidden" name="child_id" value="{{ child.id }}"><label>Ödül adı<input name="description" required></label><label>Gerekli puan<input name="required_points" type="number" min="0" value="100"></label><button>Ödülü ekle</button></form></details></div>
+  <div class="simple-grid">{% for r in rewards %}<details class="tile-card fh-reward-tile"><summary><span class="tile-icon">♢</span><div><strong>{{ r.description }}</strong><small>{{ r.required_points }} puan</small></div><span>•••</span></summary><form method="post" action="{{ url_for('admin_reward_edit',reward_id=r.id) }}"><input type="hidden" name="child_id" value="{{ child.id }}"><input name="description" value="{{ r.description }}"><input name="required_points" type="number" min="0" value="{{ r.required_points }}"><button>Kaydet</button><button class="danger" formaction="{{ url_for('admin_reward_delete',reward_id=r.id) }}" onclick="return confirm('Ödül silinsin mi?')">Sil</button></form></details>{% endfor %}</div>
+</section>
+
+<section id="goals" class="panel-section fh-admin-section fh-admin-section--goals">
+  <div class="panel-head fh-section-head"><div class="fh-section-title-wrap"><span class="fh-section-symbol">◎</span><div><span class="fh-section-kicker">GELİŞİM</span><h2>Hedefler ve rozetler</h2><p>Uzun vadeli alışkanlıkları görünür hedeflere dönüştürün.</p></div></div><details class="create-pop"><summary>＋ Yeni hedef</summary><form method="post" action="{{ url_for('admin_goal_add') }}"><input type="hidden" name="child_id" value="{{ child.id }}"><label>Rozet adı<input name="title" required></label><label>Koşul<input name="criteria"></label><label>Hedef değer<input name="target_value" type="number" min="1" value="1"></label><label>Bonus puan<input name="bonus_points" type="number" min="0" value="0"></label><button>Hedefi ekle</button></form></details></div>
+  <div class="simple-grid">{% for g in goals %}<details class="tile-card goal-tile fh-goal-tile"><summary><span class="tile-icon">◎</span><div><strong>{{ g.title }}</strong><small>{{ g.current_value }}/{{ g.target_value }} · {{ g.bonus_points }} bonus puan</small></div><span>•••</span></summary><form method="post" action="{{ url_for('admin_goal_edit',goal_id=g.id) }}" class="goal-edit"><input type="hidden" name="child_id" value="{{ child.id }}"><input name="title" value="{{ g.title }}"><input name="criteria" value="{{ g.criteria }}"><input name="target_value" type="number" min="1" value="{{ g.target_value }}"><input name="bonus_points" type="number" min="0" value="{{ g.bonus_points }}"><label><input type="checkbox" name="active" {% if g.active %}checked{% endif %}> Aktif</label><button>Kaydet</button><button class="danger" formaction="{{ url_for('admin_goal_delete',goal_id=g.id) }}" onclick="return confirm('Hedef silinsin mi?')">Sil</button></form><form method="post" action="{{ url_for('admin_goal_progress',goal_id=g.id) }}" class="progress-edit"><input type="hidden" name="child_id" value="{{ child.id }}"><input name="current_value" type="number" min="0" value="{{ g.current_value }}"><input name="completed_date" type="date" value="{{ g.completed_date or '' }}"><input name="note" value="{{ g.progress_note }}" placeholder="Admin notu"><button>İlerlemeyi kaydet</button></form></details>{% endfor %}</div>
+</section>
+
+<script>
+(() => {
+  const groups = [...document.querySelectorAll('.fh-admin-category')];
+  document.getElementById('expandAllGroups')?.addEventListener('click', () => groups.forEach(group => group.open = true));
+  document.getElementById('collapseAllGroups')?.addEventListener('click', () => groups.forEach(group => group.open = false));
+  document.querySelectorAll('.fh-cat-link').forEach((link, index) => {
+    link.addEventListener('click', () => {
+      if (groups[index]) groups[index].open = true;
+    });
+  });
+})();
+</script>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Geçmişim · FamilyHero{% endblock %}
+{% block content %}
+<main class="history-shell">
+  <section class="history-head">
+    <div>
+      <a class="back-link" href="{{ url_for('dashboard') }}">← Görevlere dön</a>
+      <h1>{{ child.name }} · Görev Takvimi</h1>
+      <p>Geçmiş günlerde tamamladığın görevleri ve kazandığın puanları gör.</p>
+    </div>
+    <div class="month-nav">
+      <a href="{{ url_for('child_history', month=previous_month) }}">‹</a>
+      <strong>{{ month_date.strftime('%m / %Y') }}</strong>
+      <a href="{{ url_for('child_history', month=next_month) }}">›</a>
+    </div>
+  </section>
+  <section class="calendar-card">
+    <div class="calendar-weekdays">{% for name in ['Pzt','Sal','Çar','Per','Cum','Cmt','Paz'] %}<span>{{ name }}</span>{% endfor %}</div>
+    <div class="calendar-grid">
+      {% for week in weeks %}{% for day in week %}
+      {% set info = day_map.get(day.isoformat()) %}
+      <div class="calendar-day {% if day.month != month_date.month %}muted{% endif %} {% if info %}has-activity{% endif %}">
+        <span class="day-number">{{ day.day }}</span>
+        {% if info %}<strong>{{ info.score }} puan</strong><small>{{ info.completed_count }} görev</small>{% endif %}
+      </div>
+      {% endfor %}{% endfor %}
+    </div>
+  </section>
+  <section class="history-list">
+    <h2>Bu ayın tamamlanan görevleri</h2>
+    {% for completion_date, items in grouped_details.items() %}
+    <article class="history-day-card"><header><strong>{{ completion_date }}</strong><span>{{ items|sum(attribute='points') }} puan</span></header>
+      {% for item in items %}<div class="history-task"><div><b>{{ item.description }}</b><small>{{ item.category }}{% if item.note %} · {{ item.note }}{% endif %}</small></div><span>+{{ item.points }}</span></div>{% endfor %}
+    </article>
+    {% else %}<div class="empty-state">Bu ay henüz tamamlanan görev yok.</div>{% endfor %}
+  </section>
+</main>
+{% endblock %}

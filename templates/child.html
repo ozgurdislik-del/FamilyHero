@@ -1,0 +1,91 @@
+{% extends "child_base.html" %}
+{% block title %}Görevlerim | FamilyHero 3.0{% endblock %}
+{% block page_name %}Bugünkü Görevler{% endblock %}
+{% block content %}
+{% set category_meta = {
+  'Öğrenme Görevleri': ('📘','learning','Öğrenme'),
+  'Akıl Oyunları': ('🧠','mind','Akıl Oyunları'),
+  'Ev Kahramanı': ('🏠','home','Ev Kahramanı'),
+  'Sağlıklı Yaşam': ('🏃','health','Sağlıklı Yaşam'),
+  'İyi Kalpli Çocuk': ('❤️','kindness','İyi Kalpli Çocuk'),
+  'Ekstra Puan Avcısı': ('⭐','bonus','Ekstra Puan')
+} %}
+<section class="fh-page-heading">
+  <div>
+    <span class="fh-page-kicker">BUGÜN · {{ today }}</span>
+    <h1>Görevlerim</h1>
+    <p>Bugünkü görevlerini tamamla, XP kazan ve yeni başarıların kilidini aç.</p>
+  </div>
+  <div class="fh-page-summary">
+    <div><strong>{{ done_count }}/{{ task_count }}</strong><span>görev</span></div>
+    <div><strong>+{{ today_score }}</strong><span>XP</span></div>
+  </div>
+</section>
+
+<section class="fh-daily-progress">
+  <div class="fh-progress-copy">
+    <span>Bugünkü ilerleme</span>
+    <strong>%{{ completion_percent }}</strong>
+  </div>
+  <div class="fh-progress-track"><i style="width:{{ completion_percent }}%"></i></div>
+  <small>{% if task_count-done_count > 0 %}Harika gidiyorsun; {{ task_count-done_count }} görev kaldı.{% else %}Bugünün tüm görevlerini tamamladın!{% endif %}</small>
+</section>
+
+<section class="fh-task-groups">
+{% for category,tasks in grouped.items() %}
+  {% set completed = tasks|selectattr('done')|list|length %}
+  {% set ns = namespace(points=0) %}
+  {% for task in tasks %}{% set ns.points = ns.points + task.points %}{% endfor %}
+  {% set meta = category_meta.get(category, ('✓','default',category)) %}
+  <details class="fh-category fh-category--{{ meta[1] }}" open>
+    <summary class="fh-category-header">
+      <div class="fh-category-identity">
+        <span class="fh-category-icon">{{ meta[0] }}</span>
+        <div>
+          <span class="fh-category-label">{{ meta[2] }}</span>
+          <h2>{{ category }}</h2>
+        </div>
+      </div>
+      <div class="fh-category-stats">
+        <span><b>{{ tasks|length }}</b> görev</span>
+        <span><b>{{ completed }}</b> tamamlandı</span>
+        <span><b>{{ ns.points }}</b> XP</span>
+        <i>⌄</i>
+      </div>
+    </summary>
+
+    <div class="fh-task-list">
+      {% for item in tasks %}
+      <article class="fh-task-card {% if item.done %}is-done{% endif %}">
+        <div class="fh-task-check">{% if item.done %}✓{% else %}○{% endif %}</div>
+        <div class="fh-task-main">
+          <div class="fh-task-title-row">
+            <div>
+              <span class="fh-task-type">{{ meta[2] }} görevi</span>
+              <h3>{{ item.description }}</h3>
+            </div>
+            <span class="fh-xp-chip">+{{ item.points }} XP</span>
+          </div>
+
+          {% if item.done %}
+          <div class="fh-completed-row">
+            <span><b>✓ Tamamlandı</b> · {{ item.points }} XP kazanıldı</span>
+            <form method="post" action="{{ url_for('undo_task',task_id=item.id) }}"><button class="fh-link-button">Geri al</button></form>
+          </div>
+          {% endif %}
+
+          <form class="fh-task-action" method="post" action="{{ url_for('save_task',task_id=item.id) }}">
+            <label class="fh-note-field">
+              <span>📝</span>
+              <input name="note" maxlength="250" value="{{ item.note }}" placeholder="{% if item.done %}Notunu güncelle{% else %}Kısa bir not ekle (isteğe bağlı){% endif %}">
+            </label>
+            <button class="fh-complete-button">{% if item.done %}Notu Kaydet{% else %}✓ Görevi Bitir{% endif %}</button>
+          </form>
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+  </details>
+{% endfor %}
+</section>
+{% endblock %}

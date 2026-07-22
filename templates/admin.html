@@ -1,0 +1,42 @@
+{% extends "admin_base.html" %}
+{% block title %}Genel Bakış | FamilyHero{% endblock %}
+{% block breadcrumb %}Genel Bakış{% endblock %}
+{% block content %}
+<section class="page-title-row">
+  <div><span class="eyebrow">YÖNETİM PANELİ</span><h1>Genel Bakış</h1><p>Ailenizin görev, puan ve ödül sistemini tek merkezden yönetin.</p></div>
+  <a class="btn btn-primary" href="#add-child">+ Yeni çocuk</a>
+</section>
+
+<section class="metric-grid">
+  <article class="metric-card"><span class="metric-icon indigo">♙</span><div><small>Toplam çocuk</small><strong>{{ children|length }}</strong><span>Aktif profil</span></div></article>
+  <article class="metric-card"><span class="metric-icon cyan">✓</span><div><small>Tanımlı görev</small><strong>{{ children|sum(attribute='task_count') }}</strong><span>Tüm çocuklarda</span></div></article>
+  <article class="metric-card"><span class="metric-icon amber">★</span><div><small>Toplam kazanılan puan</small><strong>{{ children|sum(attribute='total_score') }}</strong><span>Bugüne kadar</span></div></article>
+</section>
+
+<section class="content-grid dashboard-grid">
+  <article class="card" id="children">
+    <div class="card-header"><div><h2>Çocuk profilleri</h2><p>Profil, görev ve puan durumlarını görüntüleyin.</p></div><a class="text-link" href="{{ url_for('admin_report') }}">Raporları aç →</a></div>
+    <div class="children-table">
+      <div class="table-head"><span>Çocuk</span><span>Görev</span><span>Toplam puan</span><span>İşlem</span></div>
+      {% for child in children %}
+      <div class="table-row">
+        <div class="child-cell"><span class="profile-avatar">{{ avatars.get(child.avatar_key,'🙂') }}</span><span><strong>{{ child.name }}</strong><small>@{{ child.child_key }}</small></span></div>
+        <span><b>{{ child.task_count }}</b><small>aktif görev</small></span>
+        <span><b>{{ child.total_score }}</b><small>puan</small></span>
+        <a class="row-action" href="{{ url_for('admin_report', child_id=child.id) }}">İncele</a>
+      </div>
+      {% else %}<div class="empty-panel">Henüz çocuk profili eklenmedi.</div>{% endfor %}
+    </div>
+  </article>
+
+  <article class="card add-child-card" id="add-child">
+    <div class="card-header"><div><h2>Yeni çocuk ekle</h2><p>Yeni bir aile üyesi profili oluşturun.</p></div></div>
+    <form method="post" action="{{ url_for('admin_add_child') }}" class="modern-form">
+      <div class="field-row"><label>Çocuğun adı<input name="name" placeholder="Örn. Deniz" required></label><label>Kullanıcı anahtarı<input name="child_key" placeholder="örn. deniz" required><small>Küçük harf ve boşluksuz.</small></label></div>
+      <div class="field-row"><label>İlk şifre<input name="password" type="password" minlength="4" placeholder="En az 4 karakter" required></label><label>Unvan<input name="title" value="Süper Kaşif"></label></div>
+      <div class="field-row"><label>Başlangıç avatarı<select name="avatar_key">{% for key,emoji in avatars.items() %}<option value="{{ key }}">{{ emoji }} {{ key }}</option>{% endfor %}</select></label><label>Görev şablonu<select name="template_key"><option value="">Boş profil</option><option value="uzay">Uzay görevleri</option><option value="toprak">Toprak görevleri</option></select></label></div>
+      <button class="btn btn-primary full">Çocuk profilini oluştur</button>
+    </form>
+  </article>
+</section>
+{% endblock %}

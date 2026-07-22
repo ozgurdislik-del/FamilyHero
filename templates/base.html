@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{% block title %}FamilyHero{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static',filename='style.css') }}?v=220">
+</head>
+<body class="app-body">
+<header class="app-header">
+  <a class="app-brand" href="{{ url_for('home') }}"><span class="brand-mark">F</span><span>FamilyHero</span></a>
+  <nav class="app-nav">
+    {% if session.get('child_id') %}
+      <span class="welcome">Merhaba, {{ session.get('child_name') }}</span>
+      <a href="{{ url_for('choose_avatar') }}">Profil</a>
+      <form method="post" action="{{ url_for('logout') }}"><button>Çıkış</button></form>
+    {% endif %}
+  </nav>
+</header>
+<main class="app-main">
+  {% for category,message in get_flashed_messages(with_categories=true) %}<div class="flash {{ category }}">{{ message }}</div>{% endfor %}
+  {% block content %}{% endblock %}
+</main>
+</body>
+</html>

@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}FamilyHero | Ana Sayfa{% endblock %}
+{% block content %}
+<section class="hero">
+    <h1>Bugünün Kahramanları</h1>
+    <p>Görevlerini tamamla, puanlarını kazan ve ödüllere ulaş.</p>
+</section>
+<section class="cards">
+{% for child in children %}
+    <a class="child-card" href="{{ url_for('child_page', child_key=child.child_key) }}">
+        <div class="avatar">{{ child.name[0] }}</div>
+        <h2>{{ child.name }}</h2>
+        <p>{{ child.title }}</p>
+        <div class="card-scores">
+            <strong>Bugün: {{ child.today_score }} puan</strong>
+            <small>Toplam: {{ child.total_score }} puan</small>
+        </div>
+    </a>
+{% endfor %}
+</section>
+{% endblock %}
