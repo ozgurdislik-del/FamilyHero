@@ -1,0 +1,18 @@
+FamilyHero 4.6 — Aile Oylamaları
+
+Yeni özellikler:
+- Admin panelinde Aile Merkezi > Aile Oylamaları
+- Her konuda 2-6 seçenekli günlük oylama
+- Çocuk panelinin sağ tarafında kompakt oylama kartı
+- Çocuk başına tek oy; saat 16:00'ya kadar oy değiştirilebilir
+- Saat 16:00 sonrası otomatik kapanma ve sonuç görüntüleme
+- Oylama olmayan gün çocuk panelinde kart hiç gösterilmez
+- Admin geçmiş oylamaları, oy sayılarını görür; kapatabilir veya silebilir
+
+Kurulum:
+1. Dosyaları mevcut proje klasörünün üzerine kopyalayın.
+2. git add .
+3. git commit -m "Aile oylamalari eklendi"
+4. git push origin main
+
+Veritabanı tabloları uygulama başlarken PostgreSQL üzerinde otomatik oluşturulur.

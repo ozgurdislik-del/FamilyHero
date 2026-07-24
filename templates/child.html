@@ -80,18 +80,18 @@
           </div>
           {% endif %}
 
-          <form class="fh-task-action js-note-form" method="post" action="{{ url_for('save_task',task_id=item.id) }}">
+          <form class="fh-task-action {% if item.done %}fh-task-action-done{% endif %} js-note-form" method="post" action="{{ url_for('save_task',task_id=item.id) }}">
             <input type="hidden" name="completion_date" value="{{ selected_date }}">
             {% if item.done %}
-              <div class="fh-note-display js-note-display" {% if not item.note %}hidden{% endif %}>
-                <span>📝</span><span class="js-note-text">{{ item.note }}</span>
+              <div class="fh-note-summary js-note-display" {% if not item.note %}hidden{% endif %}>
+                <span class="fh-note-summary-icon">📝</span>
+                <span class="js-note-text">{{ item.note }}</span>
               </div>
-              <label class="fh-note-field js-note-editor" {% if item.note %}hidden{% endif %}>
-                <span>📝</span>
-                <input name="note" maxlength="250" value="{{ item.note }}" {% if not editable %}disabled{% endif %} placeholder="Kısa bir not ekle (isteğe bağlı)">
+              <label class="fh-note-editor js-note-editor" {% if item.note %}hidden{% endif %}>
+                <input name="note" maxlength="250" value="{{ item.note }}" {% if not editable %}disabled{% endif %} placeholder="Kısa bir not yazın">
               </label>
-              {% if editable %}<button type="button" class="fh-complete-button js-note-toggle">{% if item.note %}Notu Düzenle{% else %}Not Ekle{% endif %}</button>{% endif %}
-              <button type="submit" class="fh-complete-button js-note-save" {% if item.note %}hidden{% endif %} {% if not editable %}disabled{% endif %}>Notu Kaydet</button>
+              {% if editable %}<button type="button" class="fh-note-edit-button js-note-toggle">{% if item.note %}Düzenle{% else %}+ Not ekle{% endif %}</button>{% endif %}
+              <button type="submit" class="fh-note-save-button js-note-save" {% if item.note %}hidden{% endif %} {% if not editable %}disabled{% endif %}>Kaydet</button>
             {% else %}
               <label class="fh-note-field"><span>📝</span><input name="note" maxlength="250" {% if not editable %}disabled{% endif %} placeholder="Kısa bir not ekle (isteğe bağlı)"></label>
               <button class="fh-complete-button" {% if not editable %}disabled{% endif %}>{% if not editable and is_yesterday %}Zaman doldu; düne ait veri giremezsiniz{% else %}✓ Görevi Bitir{% endif %}</button>

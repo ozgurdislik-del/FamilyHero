@@ -417,6 +417,30 @@ def init_db():
             note TEXT NOT NULL DEFAULT '',
             updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
+        CREATE TABLE IF NOT EXISTS family_polls (
+            id BIGSERIAL PRIMARY KEY,
+            title TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            poll_date DATE NOT NULL,
+            active INTEGER NOT NULL DEFAULT 1,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS family_poll_options (
+            id BIGSERIAL PRIMARY KEY,
+            poll_id BIGINT NOT NULL REFERENCES family_polls(id) ON DELETE CASCADE,
+            option_text TEXT NOT NULL,
+            emoji TEXT NOT NULL DEFAULT '•',
+            sort_order INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS family_poll_votes (
+            id BIGSERIAL PRIMARY KEY,
+            poll_id BIGINT NOT NULL REFERENCES family_polls(id) ON DELETE CASCADE,
+            option_id BIGINT NOT NULL REFERENCES family_poll_options(id) ON DELETE CASCADE,
+            child_id BIGINT NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(poll_id, child_id)
+        );
         """)
         conn.execute('ALTER TABLE children ADD COLUMN IF NOT EXISTS email TEXT')
         conn.execute('ALTER TABLE children ADD COLUMN IF NOT EXISTS birth_date DATE')

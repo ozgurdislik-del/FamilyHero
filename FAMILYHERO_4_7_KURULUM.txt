@@ -1,0 +1,18 @@
+FamilyHero 4.7 - Minimal Tamamlanan Görev Notları
+
+Bu sürüm FamilyHero 4.6 Aile Oylamaları üzerine hazırlanmıştır.
+
+Değişiklikler:
+- Tamamlanan görevlerde büyük textbox kaldırıldı.
+- Notlar sade, küçük ve profesyonel metin satırı olarak gösterilir.
+- Düzenle düğmesi minimal bağlantı görünümündedir.
+- Düzenleme alanı yalnızca Düzenle / Not ekle düğmesine basınca açılır.
+- Görevin tamamlanma durumu not düzenlenirken değişmez.
+- Aile Oylamaları özelliği korunmuştur; oylama olmayan gün çocuk panelinde kart gösterilmez.
+
+Kurulum:
+1. ZIP içindeki dosyaları mevcut proje klasörünün üzerine kopyalayın.
+2. git add .
+3. git commit -m "Minimal task notes and family polls"
+4. git push origin main
+5. Railway deploy tamamlanınca Ctrl+F5 yapın.

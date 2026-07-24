@@ -207,6 +207,31 @@ def dashboard():
                FROM reward_grants rg LEFT JOIN rewards r ON r.id=rg.reward_id
                WHERE rg.child_id=? ORDER BY rg.grant_date DESC,rg.id DESC LIMIT 1""", (child["id"],)
         ).fetchone()
+        poll = conn.execute(
+            """SELECT * FROM family_polls
+               WHERE poll_date=? AND active=1
+               ORDER BY id DESC LIMIT 1""",
+            (today,),
+        ).fetchone()
+        poll_options = []
+        child_vote_option_id = None
+        poll_total_votes = 0
+        if poll:
+            poll_options = conn.execute(
+                """SELECT o.*,COUNT(v.id) vote_count
+                   FROM family_poll_options o
+                   LEFT JOIN family_poll_votes v ON v.option_id=o.id
+                   WHERE o.poll_id=?
+                   GROUP BY o.id,o.poll_id,o.option_text,o.emoji,o.sort_order
+                   ORDER BY o.sort_order,o.id""",
+                (poll["id"],),
+            ).fetchall()
+            vote = conn.execute(
+                "SELECT option_id FROM family_poll_votes WHERE poll_id=? AND child_id=?",
+                (poll["id"], child["id"]),
+            ).fetchone()
+            child_vote_option_id = vote["option_id"] if vote else None
+            poll_total_votes = sum(option["vote_count"] for option in poll_options)
         family_rows = conn.execute(
             """SELECT c.id,c.name,c.avatar_key,
                       COALESCE(SUM(CASE WHEN t.active=1 THEN t.points ELSE 0 END),0) possible_score,
@@ -241,7 +266,35 @@ def dashboard():
     return render_template("child_dashboard.html", child=child, avatars=AVATARS, today=today,
         today_score=today_score,total_score=total_score,task_count=task_count,done_count=done_count,
         completion_percent=completion_percent,goals=goals,last_reward=last_reward,
-        family_leaderboard=family_leaderboard,current_rank=current_rank,motivation_message=motivation_message)
+        family_leaderboard=family_leaderboard,current_rank=current_rank,motivation_message=motivation_message,
+        poll=poll,poll_options=poll_options,child_vote_option_id=child_vote_option_id,
+        poll_total_votes=poll_total_votes,poll_closed=istanbul_now().hour>=16)
+
+
+@app.post("/polls/<int:poll_id>/vote")
+@child_login_required
+def child_poll_vote(poll_id):
+    child = current_child()
+    now = istanbul_now()
+    today = now.date().isoformat()
+    if now.hour >= 16:
+        flash("Oylama saat 16:00'da kapandı.", "error")
+        return redirect(url_for("dashboard"))
+    option_id = request.form.get("option_id", type=int)
+    with get_db() as conn:
+        poll = conn.execute("SELECT * FROM family_polls WHERE id=? AND poll_date=? AND active=1", (poll_id, today)).fetchone()
+        option = conn.execute("SELECT id FROM family_poll_options WHERE id=? AND poll_id=?", (option_id, poll_id)).fetchone() if option_id else None
+        if not poll or not option:
+            flash("Geçerli bir seçenek seçin.", "error")
+            return redirect(url_for("dashboard"))
+        existing = conn.execute("SELECT id FROM family_poll_votes WHERE poll_id=? AND child_id=?", (poll_id, child["id"])).fetchone()
+        if existing:
+            conn.execute("UPDATE family_poll_votes SET option_id=?,created_at=CURRENT_TIMESTAMP WHERE id=?", (option_id, existing["id"]))
+            flash("Oyun güncellendi.", "success")
+        else:
+            conn.execute("INSERT INTO family_poll_votes(poll_id,option_id,child_id) VALUES(?,?,?)", (poll_id, option_id, child["id"]))
+            flash("Oyun kaydedildi.", "success")
+    return redirect(url_for("dashboard"))
 
 
 @app.route("/tasks")
@@ -759,6 +812,75 @@ def admin_delete_grant(grant_id):
         conn.execute("DELETE FROM reward_grants WHERE id=?", (grant_id,))
     flash("Ödül kaydı silindi.", "success")
     return redirect(url_for("admin_report", date=selected_date, child_id=child_id))
+
+
+@app.route("/admin/polls", methods=["GET", "POST"])
+@admin_required
+def admin_polls():
+    today = istanbul_now().date().isoformat()
+    if request.method == "POST":
+        title = request.form.get("title", "").strip()[:120]
+        description = request.form.get("description", "").strip()[:250]
+        poll_date = request.form.get("poll_date", today)
+        try:
+            datetime.strptime(poll_date, "%Y-%m-%d")
+        except ValueError:
+            poll_date = today
+        option_texts = request.form.getlist("option_text")
+        option_emojis = request.form.getlist("option_emoji")
+        options = []
+        for index, text in enumerate(option_texts[:6]):
+            text = text.strip()[:100]
+            if text:
+                emoji = option_emojis[index].strip()[:8] if index < len(option_emojis) else "•"
+                options.append((emoji or "•", text))
+        if not title or len(options) < 2:
+            flash("Oylama başlığı ve en az iki seçenek zorunludur.", "error")
+        else:
+            with get_db() as conn:
+                conn.execute("UPDATE family_polls SET active=0,updated_at=CURRENT_TIMESTAMP WHERE poll_date=?", (poll_date,))
+                cur = conn.execute("INSERT INTO family_polls(title,description,poll_date) VALUES(?,?,?)", (title, description, poll_date))
+                for order, (emoji, text) in enumerate(options):
+                    conn.execute("INSERT INTO family_poll_options(poll_id,option_text,emoji,sort_order) VALUES(?,?,?,?)", (cur.lastrowid, text, emoji, order))
+            flash("Aile oylaması yayınlandı.", "success")
+            return redirect(url_for("admin_polls"))
+    with get_db() as conn:
+        polls = conn.execute(
+            """SELECT p.*,COUNT(DISTINCT v.id) vote_count,COUNT(DISTINCT o.id) option_count
+               FROM family_polls p
+               LEFT JOIN family_poll_options o ON o.poll_id=p.id
+               LEFT JOIN family_poll_votes v ON v.poll_id=p.id
+               GROUP BY p.id,p.title,p.description,p.poll_date,p.active,p.created_at,p.updated_at
+               ORDER BY p.poll_date DESC,p.id DESC LIMIT 30"""
+        ).fetchall()
+        poll_details = {}
+        for poll in polls:
+            poll_details[poll["id"]] = conn.execute(
+                """SELECT o.*,COUNT(v.id) vote_count
+                   FROM family_poll_options o LEFT JOIN family_poll_votes v ON v.option_id=o.id
+                   WHERE o.poll_id=? GROUP BY o.id,o.poll_id,o.option_text,o.emoji,o.sort_order
+                   ORDER BY o.sort_order,o.id""", (poll["id"],)
+            ).fetchall()
+    return render_template("admin_polls.html", polls=polls, poll_details=poll_details, today=today)
+
+
+@app.post("/admin/polls/<int:poll_id>/toggle")
+@admin_required
+def admin_poll_toggle(poll_id):
+    with get_db() as conn:
+        poll = conn.execute("SELECT active FROM family_polls WHERE id=?", (poll_id,)).fetchone()
+        if poll:
+            conn.execute("UPDATE family_polls SET active=?,updated_at=CURRENT_TIMESTAMP WHERE id=?", (0 if poll["active"] else 1, poll_id))
+    return redirect(url_for("admin_polls"))
+
+
+@app.post("/admin/polls/<int:poll_id>/delete")
+@admin_required
+def admin_poll_delete(poll_id):
+    with get_db() as conn:
+        conn.execute("DELETE FROM family_polls WHERE id=?", (poll_id,))
+    flash("Oylama silindi.", "success")
+    return redirect(url_for("admin_polls"))
 
 
 @app.route("/admin/config")

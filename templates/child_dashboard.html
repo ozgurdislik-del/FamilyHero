@@ -43,27 +43,48 @@
     </section>
   </main>
 
-  <aside class="surface-card family-scoreboard-card family-scoreboard-aside">
-    <header class="surface-head">
-      <div><small>AİLE İÇİ MOTİVASYON</small><h2>Bugünün aile sıralaması</h2></div>
-      <span class="live-pill">● Güncel</span>
-    </header>
-    <div class="motivation-banner">{{ motivation_message }}</div>
-    <div class="family-scoreboard compact-scoreboard">
-      {% for member in family_leaderboard %}
-      <article class="family-score-row {% if member.id==child.id %}is-me{% endif %}">
-        <div class="family-rank">{% if member.rank==1 %}🥇{% elif member.rank==2 %}🥈{% elif member.rank==3 %}🥉{% else %}{{ member.rank }}{% endif %}</div>
-        <div class="family-avatar">{{ avatars.get(member.avatar_key,'🙂') }}</div>
-        <div class="family-member-main">
-          <div class="family-member-title"><strong>{{ member.name }}</strong>{% if member.id==child.id %}<span>Sen</span>{% endif %}</div>
-          <div class="family-points"><strong>{{ member.today_score }}</strong><small>puan</small></div>
-          <div class="family-progress-line"><i style="width:{{ member.progress_percent }}%"></i></div>
-          <small>%{{ member.progress_percent }} · {{ member.done_count }}/{{ member.task_count }} görev</small>
-        </div>
-      </article>
-      {% else %}<div class="empty-soft">Bugün için henüz puan kaydı yok.</div>{% endfor %}
-    </div>
-    <p class="privacy-note">Yalnızca puan, görev sayısı ve ilerleme oranı paylaşılır.</p>
+  <aside class="dashboard-side-stack">
+    <section class="surface-card family-scoreboard-card family-scoreboard-aside">
+      <header class="surface-head">
+        <div><small>AİLE İÇİ MOTİVASYON</small><h2>Bugünün aile sıralaması</h2></div>
+        <span class="live-pill">● Güncel</span>
+      </header>
+      <div class="motivation-banner">{{ motivation_message }}</div>
+      <div class="family-scoreboard compact-scoreboard">
+        {% for member in family_leaderboard %}
+        <article class="family-score-row {% if member.id==child.id %}is-me{% endif %}">
+          <div class="family-rank">{% if member.rank==1 %}🥇{% elif member.rank==2 %}🥈{% elif member.rank==3 %}🥉{% else %}{{ member.rank }}{% endif %}</div>
+          <div class="family-avatar">{{ avatars.get(member.avatar_key,'🙂') }}</div>
+          <div class="family-member-main">
+            <div class="family-member-title"><strong>{{ member.name }}</strong>{% if member.id==child.id %}<span>Sen</span>{% endif %}</div>
+            <div class="family-points"><strong>{{ member.today_score }}</strong><small>puan</small></div>
+            <div class="family-progress-line"><i style="width:{{ member.progress_percent }}%"></i></div>
+            <small>%{{ member.progress_percent }} · {{ member.done_count }}/{{ member.task_count }} görev</small>
+          </div>
+        </article>
+        {% else %}<div class="empty-soft">Bugün için henüz puan kaydı yok.</div>{% endfor %}
+      </div>
+      <p class="privacy-note">Yalnızca puan, görev sayısı ve ilerleme oranı paylaşılır.</p>
+    </section>
+
+    {% if poll %}
+    <section class="surface-card family-poll-card">
+      <header class="family-poll-head"><span>🗳️</span><div><small>AİLE OYLAMASI</small><h2>{{ poll.title }}</h2></div></header>
+      {% if poll.description %}<p class="family-poll-description">{{ poll.description }}</p>{% endif %}
+      {% if poll_closed %}<div class="poll-status closed">🔒 Oylama saat 16:00'da kapandı.</div>{% elif child_vote_option_id %}<div class="poll-status voted">✓ Oyun kaydedildi. 16:00'ya kadar değiştirebilirsin.</div>{% else %}<div class="poll-status open">Saat 16:00'ya kadar seçimini yap.</div>{% endif %}
+      <form method="post" action="{{ url_for('child_poll_vote',poll_id=poll.id) }}" class="poll-options">
+        {% for option in poll_options %}
+          {% set pct=((option.vote_count*100/poll_total_votes)|round|int) if poll_total_votes else 0 %}
+          <label class="poll-option {% if child_vote_option_id==option.id %}selected{% endif %}">
+            <input type="radio" name="option_id" value="{{ option.id }}" {% if child_vote_option_id==option.id %}checked{% endif %} {% if poll_closed %}disabled{% endif %}>
+            <span class="poll-emoji">{{ option.emoji }}</span><span class="poll-option-copy"><strong>{{ option.option_text }}</strong>
+            {% if child_vote_option_id or poll_closed %}<small>{{ option.vote_count }} oy · %{{ pct }}</small><i><b style="width:{{ pct }}%"></b></i>{% endif %}</span>
+          </label>
+        {% endfor %}
+        {% if not poll_closed %}<button class="poll-vote-button" type="submit">{% if child_vote_option_id %}Oyumu güncelle{% else %}Oy ver{% endif %}</button>{% endif %}
+      </form>
+    </section>
+    {% endif %}
   </aside>
 </div>
 {% endblock %}
