@@ -1,11 +1,73 @@
 {% extends "admin_base.html" %}
-{% block title %}İstatistikler · FamilyHero{% endblock %}
+{% block title %}Aile Analitiği · FamilyHero{% endblock %}
+{% block breadcrumb %}Aile Analitiği{% endblock %}
 {% block content %}
-<div class="admin-page-head"><div><span class="eyebrow">TAKİP VE RAPORLAR</span><h1>30 günlük istatistikler</h1><p>Görev tamamlama ve puan eğilimlerini çocuk bazında inceleyin.</p></div></div>
-<form class="filter-bar" method="get"><label>Çocuk<select name="child_id" onchange="this.form.submit()">{% for c in children %}<option value="{{ c.id }}" {% if c.id==child_id %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select></label></form>
-{% if child %}
-<div class="stat-summary"><div><span>Dönem</span><strong>{{ start_date }} – {{ end_date }}</strong></div><div><span>Toplam puan</span><strong>{{ series|sum(attribute='score') }}</strong></div><div><span>Tamamlanan görev</span><strong>{{ series|sum(attribute='completed_count') }}</strong></div></div>
-<section class="panel-card"><div class="panel-heading"><div><h2>Günlük puan eğilimi</h2><p>Son 30 gün</p></div></div><div class="bar-chart">{% for item in series %}<div class="bar-column" title="{{ item.date }} · {{ item.score }} puan"><div class="bar" style="height: {{ (item.score / maximum * 100)|round }}%"></div><small>{{ item.date.strftime('%d') }}</small></div>{% endfor %}</div></section>
-<section class="panel-card"><div class="panel-heading"><div><h2>Kategori performansı</h2><p>Son 30 günde kazanılan puanlar</p></div></div>{% for category in categories %}<div class="category-stat"><div><strong>{{ category.category }}</strong><small>{{ category.completed_count }} görev</small></div><div class="category-meter"><span style="width: {{ (category.score / (categories[0].score if categories else 1) * 100)|round }}%"></span></div><b>{{ category.score }} puan</b></div>{% else %}<div class="empty-state">Bu dönemde veri bulunmuyor.</div>{% endfor %}</section>
-{% endif %}
+<div class="admin-page-head analytics-head">
+  <div><span class="eyebrow">RAPORLAR VE İÇGÖRÜLER</span><h1>Aile performans merkezi</h1><p>Puan, görev tamamlama ve eğilimleri tek ekranda karşılaştırın.</p></div>
+  <form class="analytics-period" method="get">
+    <label>Dönem<select name="days" onchange="this.form.submit()"><option value="7" {% if days==7 %}selected{% endif %}>Son 7 gün</option><option value="14" {% if days==14 %}selected{% endif %}>Son 14 gün</option><option value="30" {% if days==30 %}selected{% endif %}>Son 30 gün</option></select></label>
+  </form>
+</div>
+
+<section class="analytics-kpis">
+  <article><span>Toplam aile puanı</span><strong>{{ total_points }}</strong><small>{{ start_date.strftime('%d.%m') }} – {{ end_date.strftime('%d.%m.%Y') }}</small></article>
+  <article><span>Tamamlanan görev</span><strong>{{ total_completed }}</strong><small>Seçili dönemde</small></article>
+  <article><span>Genel tamamlama</span><strong>%{{ overall_rate }}</strong><small>Aktif görev kapasitesine göre</small></article>
+  <article><span>Dönem lideri</span><strong>{{ child_series[0].name if child_series else '—' }}</strong><small>{{ child_series[0].period_score if child_series else 0 }} puan</small></article>
+</section>
+
+<div class="analytics-grid-main">
+  <section class="panel-card analytics-chart-card">
+    <div class="panel-heading"><div><h2>Günlük puan karşılaştırması</h2><p>Çocukların gün gün kazandığı puanlar</p></div><span class="date-chip">{{ days }} gün</span></div>
+    <div class="line-chart-wrap">
+      <div class="line-chart-grid">
+        {% for child in child_series %}
+        <div class="chart-series-row">
+          <div class="chart-series-name"><span>{{ avatars.get(child.avatar_key,'🙂') }}</span><strong>{{ child.name }}</strong></div>
+          <div class="spark-bars">
+            {% for score in child.points %}
+            <div class="spark-cell" title="{{ date_labels[loop.index0].strftime('%d.%m') }} · {{ score }} puan"><i style="height:{{ ((score / max_daily_score) * 100)|round if max_daily_score else 0 }}%"></i><small>{{ score }}</small></div>
+            {% endfor %}
+          </div>
+        </div>
+        {% endfor %}
+        <div class="chart-axis"><span></span><div>{% for d in date_labels %}<small>{{ d.strftime('%d') }}</small>{% endfor %}</div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel-card leaderboard-panel">
+    <div class="panel-heading"><div><h2>Dönem sıralaması</h2><p>Puan ve tamamlama oranı birlikte</p></div></div>
+    <div class="admin-leaderboard">
+      {% for child in child_series %}
+      <article>
+        <div class="admin-rank">{% if child.rank==1 %}🥇{% elif child.rank==2 %}🥈{% else %}{{ child.rank }}{% endif %}</div>
+        <div class="admin-avatar">{{ avatars.get(child.avatar_key,'🙂') }}</div>
+        <div class="admin-leader-main"><strong>{{ child.name }}</strong><small>{{ child.period_completed }} görev · %{{ child.completion_rate }}</small><div class="mini-meter"><i style="width:{{ child.completion_rate }}%"></i></div></div>
+        <div class="admin-leader-score"><strong>{{ child.period_score }}</strong><small>puan</small></div>
+      </article>
+      {% else %}<div class="empty-state">Henüz veri bulunmuyor.</div>{% endfor %}
+    </div>
+  </section>
+</div>
+
+<div class="analytics-grid-secondary">
+  <section class="panel-card">
+    <div class="panel-heading"><div><h2>Kategori performansı</h2><p>En çok puan üreten sorumluluk alanları</p></div></div>
+    <div class="category-analytics">
+      {% for item in categories %}
+      <div class="category-analytics-row"><div><strong>{{ item.category }}</strong><small>{{ item.completed_count }} görev</small></div><div class="category-analytics-meter"><i style="width:{{ item.width }}%"></i></div><b>{{ item.score }}</b></div>
+      {% else %}<div class="empty-state">Bu dönemde kategori verisi yok.</div>{% endfor %}
+    </div>
+  </section>
+
+  <section class="panel-card">
+    <div class="panel-heading"><div><h2>Daha fazla destek gereken görevler</h2><p>Seçili dönemde en az tamamlanan aktif görevler</p></div></div>
+    <div class="missed-list">
+      {% for item in missed %}
+      <article><div><strong>{{ item.description }}</strong><small>{{ item.child_name }} · {{ item.category }}</small></div><span>{{ item.missed_count }} gün eksik</span></article>
+      {% else %}<div class="empty-state">Harika! Eksik görev görünmüyor.</div>{% endfor %}
+    </div>
+  </section>
+</div>
 {% endblock %}

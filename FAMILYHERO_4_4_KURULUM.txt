@@ -1,0 +1,40 @@
+FAMILYHERO 4.4 — AİLE SIRALAMASI VE PROFESYONEL RAPORLAR
+
+EKLENENLER
+1. Çocuk ana panelinde "Bugünün aile sıralaması"
+   - Her çocuğun bugünkü puanı
+   - Günlük alınabilecek toplam puanı
+   - Tamamlanan görev sayısı
+   - İlerleme yüzdesi
+   - Motivasyon mesajı
+   - Kardeşlerin görev notları ve özel profil bilgileri gösterilmez
+
+2. Yönetici panelinde "Aile Analitiği"
+   - Son 7 / 14 / 30 gün seçimi
+   - Toplam aile puanı
+   - Tamamlanan görev sayısı
+   - Genel tamamlama oranı
+   - Dönem lideri
+   - Çocuk bazında günlük puan grafiği
+   - Dönem sıralaması
+   - Kategori performansı
+   - Daha fazla destek gereken görevler
+
+KURULUM
+ZIP içindeki dosyaları mevcut FamilyHero proje klasörünün üzerine kopyalayın.
+
+VS Code terminali:
+git add .
+git commit -m "Aile siralamasi ve profesyonel raporlar"
+git push origin main
+
+Railway otomatik deploy tamamlandıktan sonra:
+- Çocuk hesabında Kahraman Paneli sayfasını açın.
+- Yönetici panelinde sol menüden Aile Analitiği sayfasını açın.
+
+GEREKLİ RAILWAY DEĞİŞKENLERİ
+DATABASE_URL=${{Postgres.DATABASE_URL}}
+RESEND_API_KEY=re_...
+RESEND_FROM=FamilyHero <onboarding@resend.dev>
+
+Not: Alan adı doğrulanana kadar Resend test göndericisi yalnızca Resend hesabının e-posta adresine mail gönderebilir.

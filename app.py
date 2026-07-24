@@ -207,12 +207,41 @@ def dashboard():
                FROM reward_grants rg LEFT JOIN rewards r ON r.id=rg.reward_id
                WHERE rg.child_id=? ORDER BY rg.grant_date DESC,rg.id DESC LIMIT 1""", (child["id"],)
         ).fetchone()
+        family_rows = conn.execute(
+            """SELECT c.id,c.name,c.avatar_key,
+                      COALESCE(SUM(CASE WHEN t.active=1 THEN t.points ELSE 0 END),0) possible_score,
+                      COALESCE(SUM(CASE WHEN cp.id IS NOT NULL THEN t.points ELSE 0 END),0) today_score,
+                      COUNT(DISTINCT CASE WHEN t.active=1 THEN t.id END) task_count,
+                      COUNT(DISTINCT cp.id) done_count
+               FROM children c
+               LEFT JOIN tasks t ON t.child_id=c.id AND t.active=1
+               LEFT JOIN completions cp ON cp.task_id=t.id AND cp.completion_date=?
+               GROUP BY c.id,c.name,c.avatar_key
+               ORDER BY today_score DESC,c.name""",
+            (today,),
+        ).fetchall()
     task_count=len(tasks); done_count=sum(1 for t in tasks if t["done"])
     completion_percent=round(done_count*100/task_count) if task_count else 0
     total_score=task_total+goal_bonus
+    family_leaderboard=[]
+    for index,row in enumerate(family_rows, start=1):
+        item=dict(row)
+        item["rank"]=index
+        item["progress_percent"]=round(item["today_score"]*100/item["possible_score"]) if item["possible_score"] else 0
+        family_leaderboard.append(item)
+    current_rank=next((item["rank"] for item in family_leaderboard if item["id"]==child["id"]),1)
+    leader=family_leaderboard[0] if family_leaderboard else None
+    if leader and leader["id"]==child["id"]:
+        motivation_message="Bugünün lideri sensin! Seriyi korumaya devam et. 🏆"
+    elif leader:
+        difference=max(0,leader["today_score"]-today_score)
+        motivation_message=f"{leader['name']} bugün {difference} puan önde. Bir görev daha tamamlayarak farkı kapatabilirsin! 🚀"
+    else:
+        motivation_message="İlk puanı sen kazan ve aile sıralamasında öne geç! ⚡"
     return render_template("child_dashboard.html", child=child, avatars=AVATARS, today=today,
         today_score=today_score,total_score=total_score,task_count=task_count,done_count=done_count,
-        completion_percent=completion_percent,goals=goals,last_reward=last_reward)
+        completion_percent=completion_percent,goals=goals,last_reward=last_reward,
+        family_leaderboard=family_leaderboard,current_rank=current_rank,motivation_message=motivation_message)
 
 
 @app.route("/tasks")
@@ -508,6 +537,97 @@ def admin_add_child():
 
     flash(f"{name} başarıyla eklendi.", "success")
     return redirect(url_for("admin_panel"))
+
+
+@app.route("/admin/statistics")
+@admin_required
+def admin_statistics():
+    days = request.args.get("days", default=7, type=int)
+    if days not in (7, 14, 30):
+        days = 7
+    end_day = istanbul_now().date()
+    start_day = end_day - timedelta(days=days - 1)
+    date_labels = [start_day + timedelta(days=i) for i in range(days)]
+
+    with get_db() as conn:
+        children = conn.execute("SELECT id,name,avatar_key FROM children ORDER BY id").fetchall()
+        active_tasks = conn.execute(
+            """SELECT child_id,COUNT(*) task_count,COALESCE(SUM(points),0) possible_daily
+               FROM tasks WHERE active=1 GROUP BY child_id"""
+        ).fetchall()
+        daily_rows = conn.execute(
+            """SELECT t.child_id,cp.completion_date,COUNT(*) completed_count,COALESCE(SUM(t.points),0) score
+               FROM completions cp JOIN tasks t ON t.id=cp.task_id
+               WHERE cp.completion_date BETWEEN ? AND ?
+               GROUP BY t.child_id,cp.completion_date
+               ORDER BY cp.completion_date""",
+            (start_day.isoformat(), end_day.isoformat()),
+        ).fetchall()
+        category_rows = conn.execute(
+            """SELECT t.category,COUNT(*) completed_count,COALESCE(SUM(t.points),0) score
+               FROM completions cp JOIN tasks t ON t.id=cp.task_id
+               WHERE cp.completion_date BETWEEN ? AND ?
+               GROUP BY t.category ORDER BY score DESC,t.category""",
+            (start_day.isoformat(), end_day.isoformat()),
+        ).fetchall()
+        missed_rows = conn.execute(
+            """SELECT c.name child_name,t.description,t.category,COUNT(cp.id) completed_count
+               FROM tasks t JOIN children c ON c.id=t.child_id
+               LEFT JOIN completions cp ON cp.task_id=t.id AND cp.completion_date BETWEEN ? AND ?
+               WHERE t.active=1
+               GROUP BY c.name,t.id,t.description,t.category
+               ORDER BY completed_count ASC,c.name,t.description LIMIT 8""",
+            (start_day.isoformat(), end_day.isoformat()),
+        ).fetchall()
+
+    task_map={row["child_id"]:dict(row) for row in active_tasks}
+    daily_map={(row["child_id"],str(row["completion_date"])):dict(row) for row in daily_rows}
+    child_series=[]
+    total_points=0
+    total_completed=0
+    total_possible=0
+    max_daily_score=1
+    for child_row in children:
+        child=dict(child_row)
+        task_info=task_map.get(child["id"],{"task_count":0,"possible_daily":0})
+        points=[]
+        completed=[]
+        for day in date_labels:
+            item=daily_map.get((child["id"],day.isoformat()),{"score":0,"completed_count":0})
+            points.append(int(item["score"] or 0))
+            completed.append(int(item["completed_count"] or 0))
+        period_score=sum(points)
+        period_completed=sum(completed)
+        possible=int(task_info["possible_daily"] or 0)*days
+        completion_capacity=int(task_info["task_count"] or 0)*days
+        completion_rate=round(period_completed*100/completion_capacity) if completion_capacity else 0
+        max_daily_score=max(max_daily_score,max(points) if points else 0)
+        total_points+=period_score
+        total_completed+=period_completed
+        total_possible+=completion_capacity
+        child.update(points=points,completed=completed,period_score=period_score,
+                     period_completed=period_completed,possible_score=possible,
+                     completion_rate=completion_rate)
+        child_series.append(child)
+    child_series.sort(key=lambda item:(item["period_score"],item["completion_rate"]),reverse=True)
+    for index,item in enumerate(child_series,start=1):
+        item["rank"]=index
+    overall_rate=round(total_completed*100/total_possible) if total_possible else 0
+    categories=[]
+    max_category=max([int(row["score"] or 0) for row in category_rows] or [1])
+    for row in category_rows:
+        item=dict(row)
+        item["width"]=round(int(item["score"] or 0)*100/max_category) if max_category else 0
+        categories.append(item)
+    missed=[]
+    for row in missed_rows:
+        item=dict(row)
+        item["missed_count"]=max(0,days-int(item["completed_count"] or 0))
+        missed.append(item)
+    return render_template("admin_statistics.html",children=children,child_series=child_series,
+        date_labels=date_labels,start_date=start_day,end_date=end_day,days=days,
+        total_points=total_points,total_completed=total_completed,overall_rate=overall_rate,
+        categories=categories,missed=missed,max_daily_score=max_daily_score,avatars=AVATARS)
 
 
 @app.route("/admin/report")
