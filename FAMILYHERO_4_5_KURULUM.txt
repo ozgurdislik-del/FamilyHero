@@ -1,0 +1,16 @@
+FamilyHero 4.5 - Oyunlastirilmis UI
+
+Degisiklikler:
+- Cocuk panelindeki aile siralamasi sag tarafta kompakt dikey panel oldu.
+- Siralama kartlari daha az yer kapliyor.
+- Rozet ekrani masaustunde 5 sutun x 2 satir olacak sekilde kompaktlastirildi.
+- Her rozet basligina gore kitap, satranc, kodlama, Ingilizce, dunya, yuzme, saglik gibi ilgili ikon aliyor.
+- Tablet ve telefonda otomatik olarak 4/3/2/1 sutuna iner.
+
+Kurulum:
+1. Bu klasordeki dosyalari mevcut FamilyHero klasorunun uzerine kopyalayin.
+2. Terminal:
+   git add .
+   git commit -m "Kompakt aile siralamasi ve rozet koleksiyonu"
+   git push origin main
+3. Railway deploy bittikten sonra tarayicida Ctrl+F5 yapin.

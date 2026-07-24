@@ -1,1 +1,35 @@
-{% extends "child_base.html" %}{% block title %}Rozetlerim | FamilyHero{% endblock %}{% block page_name %}Rozetlerim{% endblock %}{% block content %}<div class="child-page-head"><div><span>GELİŞİMİM</span><h1>Rozet yolculuğum</h1><p>Hedeflerine yaklaştıkça kahramanlık koleksiyonun büyür.</p></div></div><div class="badge-page-grid">{% for goal in goals %}{% set pct=[100,((goal.current_value/goal.target_value)*100)|round|int]|min %}<article class="badge-card {% if goal.completed_date %}complete{% endif %}"><div class="badge-symbol">◇</div><div class="badge-copy"><span>{% if goal.completed_date %}TAMAMLANDI{% else %}+{{ goal.bonus_points }} PUAN{% endif %}</span><h2>{{ goal.title }}</h2><p>{{ goal.criteria }}</p><div class="badge-progress-label"><b>{{ goal.current_value }} / {{ goal.target_value }}</b><small>%{{ pct }}</small></div><div class="progress-line"><i style="width:{{ pct }}%"></i></div></div></article>{% else %}<div class="empty-soft">Henüz rozet hedefi yok.</div>{% endfor %}</div>{% endblock %}
+{% extends "child_base.html" %}
+{% block title %}Rozetlerim | FamilyHero{% endblock %}
+{% block page_name %}Rozetlerim{% endblock %}
+{% block content %}
+<div class="child-page-head compact-badge-head">
+  <div><span>GELİŞİMİM</span><h1>Rozet yolculuğum</h1><p>Hedeflerine yaklaştıkça kahramanlık koleksiyonun büyür.</p></div>
+</div>
+<div class="badge-page-grid badge-grid-compact">
+  {% for goal in goals %}
+    {% set pct=[100,((goal.current_value/goal.target_value)*100)|round|int]|min %}
+    {% set title=goal.title|lower %}
+    {% if 'kitap' in title %}{% set badge_icon='📖' %}
+    {% elif 'satranç' in title %}{% set badge_icon='♞' %}
+    {% elif 'kod' in title %}{% set badge_icon='💻' %}
+    {% elif 'ingiliz' in title %}{% set badge_icon='🇬🇧' %}
+    {% elif 'ülke' in title or 'harita' in title %}{% set badge_icon='🌍' %}
+    {% elif 'yüz' in title %}{% set badge_icon='🏊' %}
+    {% elif 'sağlık' in title %}{% set badge_icon='🛡️' %}
+    {% elif 'iyilik' in title %}{% set badge_icon='❤️' %}
+    {% elif 'spor' in title %}{% set badge_icon='🏅' %}
+    {% elif 'okul' in title or 'ders' in title %}{% set badge_icon='🎓' %}
+    {% else %}{% set badge_icon='🏆' %}{% endif %}
+    <article class="badge-card compact-badge-card {% if goal.completed_date %}complete{% endif %}">
+      <div class="badge-art" aria-hidden="true">{{ badge_icon }}</div>
+      <div class="badge-copy">
+        <span>{% if goal.completed_date %}TAMAMLANDI{% else %}+{{ goal.bonus_points }} PUAN{% endif %}</span>
+        <h2>{{ goal.title }}</h2>
+        <p>{{ goal.criteria }}</p>
+        <div class="badge-progress-label"><b>{{ goal.current_value }} / {{ goal.target_value }}</b><small>%{{ pct }}</small></div>
+        <div class="progress-line"><i style="width:{{ pct }}%"></i></div>
+      </div>
+    </article>
+  {% else %}<div class="empty-soft">Henüz rozet hedefi yok.</div>{% endfor %}
+</div>
+{% endblock %}

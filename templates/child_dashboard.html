@@ -1,32 +1,69 @@
-{% extends "child_base.html" %}{% block title %}Kahraman Paneli | FamilyHero{% endblock %}{% block page_name %}Kahraman Paneli{% endblock %}{% block content %}
-<section class="hero-dashboard-banner"><div><span class="hero-overline">BUGÜNÜN MACERASI</span><h1>Merhaba {{ child.name }}!</h1><p>Yeni bir gün, yeni başarılar. Hazırsan macerana başlayalım.</p><a class="hero-cta" href="{{ url_for('child_tasks') }}">Bugünkü maceraya başla <b>→</b></a></div><div class="hero-character">{{ avatars.get(child.avatar_key,'🙂') }}</div></section>
-<section class="child-metric-grid"><article><span>Bugünkü puan</span><strong>{{ today_score }}</strong><small>XP kazandın</small></article><article><span>Toplam puan</span><strong>{{ total_score }}</strong><small>Kahraman puanın</small></article><article><span>Tamamlanan</span><strong>{{ done_count }}/{{ task_count }}</strong><small>görev</small></article><article><span>İlerleme</span><strong>%{{ completion_percent }}</strong><small>bugün</small></article></section>
-<section class="surface-card family-scoreboard-card">
-  <header class="surface-head">
-    <div><small>AİLE İÇİ MOTİVASYON</small><h2>Bugünün aile sıralaması</h2></div>
-    <span class="live-pill">● Güncel</span>
-  </header>
-  <div class="motivation-banner">{{ motivation_message }}</div>
-  <div class="family-scoreboard">
-    {% for member in family_leaderboard %}
-    <article class="family-score-row {% if member.id==child.id %}is-me{% endif %}">
-      <div class="family-rank">{% if member.rank==1 %}🥇{% elif member.rank==2 %}🥈{% elif member.rank==3 %}🥉{% else %}{{ member.rank }}{% endif %}</div>
-      <div class="family-avatar">{{ avatars.get(member.avatar_key,'🙂') }}</div>
-      <div class="family-member-main">
-        <div class="family-member-title"><strong>{{ member.name }}</strong>{% if member.id==child.id %}<span>Sen</span>{% endif %}</div>
-        <div class="family-progress-line"><i style="width:{{ member.progress_percent }}%"></i></div>
-        <small>{{ member.done_count }}/{{ member.task_count }} görev tamamlandı · %{{ member.progress_percent }}</small>
+{% extends "child_base.html" %}
+{% block title %}Kahraman Paneli | FamilyHero{% endblock %}
+{% block page_name %}Kahraman Paneli{% endblock %}
+{% block content %}
+<div class="dashboard-layout">
+  <main class="dashboard-primary">
+    <section class="hero-dashboard-banner">
+      <div>
+        <span class="hero-overline">BUGÜNÜN MACERASI</span>
+        <h1>Merhaba {{ child.name }}!</h1>
+        <p>Yeni bir gün, yeni başarılar. Hazırsan macerana başlayalım.</p>
+        <a class="hero-cta" href="{{ url_for('child_tasks') }}">Bugünkü maceraya başla <b>→</b></a>
       </div>
-      <div class="family-points"><strong>{{ member.today_score }}</strong><small>/ {{ member.possible_score }} puan</small></div>
-    </article>
-    {% else %}
-    <div class="empty-soft">Bugün için henüz puan kaydı yok.</div>
-    {% endfor %}
-  </div>
-  <p class="privacy-note">Yalnızca puan, görev sayısı ve ilerleme oranı paylaşılır; görev notları ve profil bilgileri gizli kalır.</p>
-</section>
+      <div class="hero-character">{{ avatars.get(child.avatar_key,'🙂') }}</div>
+    </section>
 
-<div class="dashboard-columns"><section class="surface-card"><header class="surface-head"><div><small>GÜNLÜK DURUM</small><h2>Bugünkü ilerlemem</h2></div><a href="{{ url_for('child_tasks') }}">Görevleri aç</a></header><div class="big-progress"><div><strong>{{ done_count }} görev tamamlandı</strong><span>{{ task_count-done_count }} görev kaldı</span></div><div class="progress-line"><i style="width:{{ completion_percent }}%"></i></div></div></section>
-<section class="surface-card"><header class="surface-head"><div><small>SON ÖDÜL</small><h2>Kazandığım ödül</h2></div></header>{% if last_reward %}<div class="last-reward"><span>☆</span><div><strong>{{ last_reward.description }}</strong><small>{{ last_reward.grant_date }}</small></div></div>{% else %}<div class="empty-soft">Henüz verilen bir ödül yok. İlk ödülün seni bekliyor.</div>{% endif %}</section></div>
-<section class="surface-card"><header class="surface-head"><div><small>HEDEFLER</small><h2>En yakın rozetlerim</h2></div><a href="{{ url_for('child_badges') }}">Tümünü gör</a></header><div class="goal-preview-grid">{% for goal in goals %}{% set pct=[100,((goal.current_value/goal.target_value)*100)|round|int]|min %}<article><div class="goal-preview-top"><span>◇</span><div><strong>{{ goal.title }}</strong><small>{{ goal.criteria }}</small></div><b>{{ goal.current_value }}/{{ goal.target_value }}</b></div><div class="progress-line"><i style="width:{{ pct }}%"></i></div></article>{% else %}<div class="empty-soft">Henüz rozet hedefi tanımlanmamış.</div>{% endfor %}</div></section>
+    <section class="child-metric-grid">
+      <article><span>Bugünkü puan</span><strong>{{ today_score }}</strong><small>XP kazandın</small></article>
+      <article><span>Toplam puan</span><strong>{{ total_score }}</strong><small>Kahraman puanın</small></article>
+      <article><span>Tamamlanan</span><strong>{{ done_count }}/{{ task_count }}</strong><small>görev</small></article>
+      <article><span>İlerleme</span><strong>%{{ completion_percent }}</strong><small>bugün</small></article>
+    </section>
+
+    <div class="dashboard-columns">
+      <section class="surface-card">
+        <header class="surface-head"><div><small>GÜNLÜK DURUM</small><h2>Bugünkü ilerlemem</h2></div><a href="{{ url_for('child_tasks') }}">Görevleri aç</a></header>
+        <div class="big-progress"><div><strong>{{ done_count }} görev tamamlandı</strong><span>{{ task_count-done_count }} görev kaldı</span></div><div class="progress-line"><i style="width:{{ completion_percent }}%"></i></div></div>
+      </section>
+      <section class="surface-card">
+        <header class="surface-head"><div><small>SON ÖDÜL</small><h2>Kazandığım ödül</h2></div></header>
+        {% if last_reward %}<div class="last-reward"><span>☆</span><div><strong>{{ last_reward.description }}</strong><small>{{ last_reward.grant_date }}</small></div></div>{% else %}<div class="empty-soft">Henüz verilen bir ödül yok. İlk ödülün seni bekliyor.</div>{% endif %}
+      </section>
+    </div>
+
+    <section class="surface-card">
+      <header class="surface-head"><div><small>HEDEFLER</small><h2>En yakın rozetlerim</h2></div><a href="{{ url_for('child_badges') }}">Tümünü gör</a></header>
+      <div class="goal-preview-grid">
+        {% for goal in goals %}
+          {% set pct=[100,((goal.current_value/goal.target_value)*100)|round|int]|min %}
+          <article><div class="goal-preview-top"><span>◇</span><div><strong>{{ goal.title }}</strong><small>{{ goal.criteria }}</small></div><b>{{ goal.current_value }}/{{ goal.target_value }}</b></div><div class="progress-line"><i style="width:{{ pct }}%"></i></div></article>
+        {% else %}<div class="empty-soft">Henüz rozet hedefi tanımlanmamış.</div>{% endfor %}
+      </div>
+    </section>
+  </main>
+
+  <aside class="surface-card family-scoreboard-card family-scoreboard-aside">
+    <header class="surface-head">
+      <div><small>AİLE İÇİ MOTİVASYON</small><h2>Bugünün aile sıralaması</h2></div>
+      <span class="live-pill">● Güncel</span>
+    </header>
+    <div class="motivation-banner">{{ motivation_message }}</div>
+    <div class="family-scoreboard compact-scoreboard">
+      {% for member in family_leaderboard %}
+      <article class="family-score-row {% if member.id==child.id %}is-me{% endif %}">
+        <div class="family-rank">{% if member.rank==1 %}🥇{% elif member.rank==2 %}🥈{% elif member.rank==3 %}🥉{% else %}{{ member.rank }}{% endif %}</div>
+        <div class="family-avatar">{{ avatars.get(member.avatar_key,'🙂') }}</div>
+        <div class="family-member-main">
+          <div class="family-member-title"><strong>{{ member.name }}</strong>{% if member.id==child.id %}<span>Sen</span>{% endif %}</div>
+          <div class="family-points"><strong>{{ member.today_score }}</strong><small>puan</small></div>
+          <div class="family-progress-line"><i style="width:{{ member.progress_percent }}%"></i></div>
+          <small>%{{ member.progress_percent }} · {{ member.done_count }}/{{ member.task_count }} görev</small>
+        </div>
+      </article>
+      {% else %}<div class="empty-soft">Bugün için henüz puan kaydı yok.</div>{% endfor %}
+    </div>
+    <p class="privacy-note">Yalnızca puan, görev sayısı ve ilerleme oranı paylaşılır.</p>
+  </aside>
+</div>
 {% endblock %}
