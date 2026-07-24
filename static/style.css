@@ -919,3 +919,54 @@ svg {
 @keyframes familyheroFactScroll{from{transform:translateX(12%)}to{transform:translateX(-50%)}}
 @media(max-width:620px){.hero-dashboard-banner{padding-bottom:58px}.daily-fact-ticker{height:42px}.daily-fact-label{padding:0 9px;font-size:8px}.daily-fact-track{animation-duration:20s;gap:50px}.daily-fact-track span{font-size:10px}}
 @media(prefers-reduced-motion:reduce){.daily-fact-track{animation:none;transform:none;padding-left:14px}}
+
+/* FamilyHero Sprint 1: collapsible admin navigation and poll management polish */
+.topbar-left{display:flex;align-items:center;gap:12px}
+.menu-btn{display:inline-grid;place-items:center;width:36px;height:36px;border:1px solid var(--line);border-radius:9px;background:#fff;color:#526173;cursor:pointer;font-size:18px}
+.menu-btn:hover{background:#f5f8fb}
+.admin-layout,.sidebar,.workspace{transition:grid-template-columns .2s ease,width .2s ease}
+.admin-layout.sidebar-collapsed{grid-template-columns:72px minmax(0,1fr)}
+.admin-layout.sidebar-collapsed .sidebar{width:72px;padding-left:8px;padding-right:8px}
+.admin-layout.sidebar-collapsed .sidebar-logo{justify-content:center;padding-left:0;padding-right:0}
+.admin-layout.sidebar-collapsed .sidebar-logo>div,
+.admin-layout.sidebar-collapsed .sidebar nav>p,
+.admin-layout.sidebar-collapsed .nav-group>span,
+.admin-layout.sidebar-collapsed .sidebar nav a span,
+.admin-layout.sidebar-collapsed .sidebar-account>div:not(.account-dot),
+.admin-layout.sidebar-collapsed .sidebar-account form{display:none}
+.admin-layout.sidebar-collapsed .sidebar nav a{justify-content:center;padding-left:8px;padding-right:8px}
+.admin-layout.sidebar-collapsed .sidebar nav a i{width:auto;font-size:16px}
+.admin-layout.sidebar-collapsed .sidebar-account{grid-template-columns:1fr;justify-items:center}
+.poll-form-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.poll-edit-warning{padding:10px 12px;border-radius:10px;background:#fff7ed;color:#9a3412;font-size:12px;line-height:1.45}
+.poll-voters{margin:10px 0;border:1px solid #e4e7ec;border-radius:10px;background:#fcfcfd;overflow:hidden}
+.poll-voters summary{cursor:pointer;padding:9px 11px;color:#475467;font-size:12px;font-weight:800;list-style:none}
+.poll-voters summary::-webkit-details-marker{display:none}
+.poll-voters summary b{display:inline-grid;place-items:center;min-width:20px;height:20px;margin-left:4px;border-radius:999px;background:#eef2ff;color:#4f46e5;font-size:10px}
+.poll-voters>div{display:flex;gap:7px;flex-wrap:wrap;padding:0 11px 9px}
+.poll-voters>div span{padding:5px 8px;border-radius:999px;background:#ecfdf3;color:#067647;font-size:11px;font-weight:700}
+.poll-voters>small{display:block;padding:0 11px 10px;color:#98a2b3;font-size:10px}
+.poll-card-actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.poll-card-actions a,.poll-card-actions button{white-space:nowrap}
+.admin-poll-results em{font-style:normal;margin-right:6px}
+@media(max-width:900px){
+  .admin-layout,.admin-layout.sidebar-collapsed{display:block}
+  .admin-layout.sidebar-collapsed .sidebar{width:218px;padding:0}
+  .admin-layout.sidebar-collapsed .sidebar-logo{justify-content:flex-start;padding:0 14px}
+  .admin-layout.sidebar-collapsed .sidebar-logo>div,
+  .admin-layout.sidebar-collapsed .sidebar nav>p,
+  .admin-layout.sidebar-collapsed .nav-group>span,
+  .admin-layout.sidebar-collapsed .sidebar nav a span,
+  .admin-layout.sidebar-collapsed .sidebar-account>div:not(.account-dot),
+  .admin-layout.sidebar-collapsed .sidebar-account form{display:block}
+  .admin-layout.sidebar-collapsed .sidebar nav a{justify-content:flex-start;padding:9px 13px}
+  .admin-layout.sidebar-collapsed .sidebar-account{display:grid;grid-template-columns:auto 1fr auto;justify-items:stretch}
+  .admin-poll-card footer{align-items:flex-start;flex-direction:column}
+  .poll-card-actions{justify-content:flex-start}
+}
+@media(max-width:560px){
+  .poll-editor-head{display:grid}
+  .poll-editor-row{grid-template-columns:52px minmax(0,1fr)}
+  .poll-card-actions{display:grid;grid-template-columns:1fr 1fr;width:100%}
+  .poll-card-actions form,.poll-card-actions a,.poll-card-actions button{width:100%}
+}
