@@ -10,6 +10,7 @@
     <span>GELİŞİMİM</span>
     <a class="{% if request.endpoint=='child_badges' %}active{% endif %}" href="{{ url_for('child_badges') }}"><i>◇</i> Rozetlerim</a>
     <a class="{% if request.endpoint=='child_rewards' %}active{% endif %}" href="{{ url_for('child_rewards') }}"><i>☆</i> Ödüllerim</a>
+    <a class="{% if request.endpoint=='child_profile' %}active{% endif %}" href="{{ url_for('child_profile') }}"><i>👤</i> Profilim</a>
     <a class="{% if request.endpoint=='choose_avatar' %}active{% endif %}" href="{{ url_for('choose_avatar') }}"><i>☺</i> Avatarım</a>
   </nav>
   <form class="child-logout" method="post" action="{{ url_for('logout') }}"><button>Çıkış yap</button></form>

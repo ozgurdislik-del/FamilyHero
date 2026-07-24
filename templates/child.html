@@ -1,5 +1,22 @@
 {% extends "child_base.html" %}
-{% block title %}Görevlerim | FamilyHero 3.0{% endblock %}
+{% block title %}Görevlerim | FamilyHero 3.0<script>
+document.querySelectorAll('.js-note-form').forEach(function(form){
+  const toggle=form.querySelector('.js-note-toggle');
+  if(!toggle) return;
+  toggle.addEventListener('click',function(){
+    const display=form.querySelector('.js-note-display');
+    const editor=form.querySelector('.js-note-editor');
+    const save=form.querySelector('.js-note-save');
+    if(display) display.hidden=true;
+    if(editor) editor.hidden=false;
+    if(save) save.hidden=false;
+    toggle.hidden=true;
+    const input=form.querySelector('input[name="note"]');
+    if(input) input.focus();
+  });
+});
+</script>
+{% endblock %}
 {% block page_name %}Görevlerim{% endblock %}
 {% block content %}
 {% set category_meta = {
@@ -80,12 +97,22 @@
           </div>
           {% endif %}
 
-          <form class="fh-task-action" method="post" action="{{ url_for('save_task',task_id=item.id) }}"><input type="hidden" name="completion_date" value="{{ selected_date }}">
-            <label class="fh-note-field">
-              <span>📝</span>
-              <input name="note" maxlength="250" value="{{ item.note }}" {% if not editable %}disabled{% endif %} placeholder="{% if item.done %}Notunu güncelle{% else %}Kısa bir not ekle (isteğe bağlı){% endif %}">
-            </label>
-            <button class="fh-complete-button" {% if not editable %}disabled{% endif %}>{% if item.done %}Notu Kaydet{% else %}✓ Görevi Bitir{% endif %}</button>
+          <form class="fh-task-action js-note-form" method="post" action="{{ url_for('save_task',task_id=item.id) }}">
+            <input type="hidden" name="completion_date" value="{{ selected_date }}">
+            {% if item.done %}
+              <div class="fh-note-display js-note-display" {% if not item.note %}hidden{% endif %}>
+                <span>📝</span><span class="js-note-text">{{ item.note }}</span>
+              </div>
+              <label class="fh-note-field js-note-editor" {% if item.note %}hidden{% endif %}>
+                <span>📝</span>
+                <input name="note" maxlength="250" value="{{ item.note }}" {% if not editable %}disabled{% endif %} placeholder="Kısa bir not ekle (isteğe bağlı)">
+              </label>
+              {% if editable %}<button type="button" class="fh-complete-button js-note-toggle">{% if item.note %}Notu Düzenle{% else %}Not Ekle{% endif %}</button>{% endif %}
+              <button type="submit" class="fh-complete-button js-note-save" {% if item.note %}hidden{% endif %} {% if not editable %}disabled{% endif %}>Notu Kaydet</button>
+            {% else %}
+              <label class="fh-note-field"><span>📝</span><input name="note" maxlength="250" {% if not editable %}disabled{% endif %} placeholder="Kısa bir not ekle (isteğe bağlı)"></label>
+              <button class="fh-complete-button" {% if not editable %}disabled{% endif %}>{% if not editable and is_yesterday %}Zaman doldu; düne ait veri giremezsiniz{% else %}✓ Görevi Bitir{% endif %}</button>
+            {% endif %}
           </form>
         </div>
       </article>

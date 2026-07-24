@@ -23,7 +23,7 @@
         <div class="child-cell"><span class="profile-avatar">{{ avatars.get(child.avatar_key,'🙂') }}</span><span><strong>{{ child.name }}</strong><small>@{{ child.child_key }}</small></span></div>
         <span><b>{{ child.task_count }}</b><small>aktif görev</small></span>
         <span><b>{{ child.total_score }}</b><small>puan</small></span>
-        <a class="row-action" href="{{ url_for('admin_report', child_id=child.id) }}">İncele</a>
+        <a class="row-action" href="{{ url_for('admin_child_profile', child_id=child.id) }}">Profili aç</a>
       </div>
       {% else %}<div class="empty-panel">Henüz çocuk profili eklenmedi.</div>{% endfor %}
     </div>
@@ -33,7 +33,8 @@
     <div class="card-header"><div><h2>Yeni çocuk ekle</h2><p>Yeni bir aile üyesi profili oluşturun.</p></div></div>
     <form method="post" action="{{ url_for('admin_add_child') }}" class="modern-form">
       <div class="field-row"><label>Çocuğun adı<input name="name" placeholder="Örn. Deniz" required></label><label>Kullanıcı anahtarı<input name="child_key" placeholder="örn. deniz" required><small>Küçük harf ve boşluksuz.</small></label></div>
-      <div class="field-row"><label>E-posta adresi<input name="email" type="email" placeholder="cocuk@ornek.com" required></label><label>İlk şifre<input name="password" type="password" minlength="4" placeholder="En az 4 karakter" required></label></div><div class="field-row"><label>Unvan<input name="title" value="Süper Kaşif"></label><span></span></div>
+      <div class="field-row"><label>E-posta adresi<input name="email" type="email" placeholder="cocuk@ornek.com" required></label><label>İlk şifre<input name="password" type="password" minlength="4" placeholder="En az 4 karakter" required></label></div><div class="field-row"><label>Unvan<input name="title" value="Süper Kaşif"></label><label>Doğum tarihi<input name="birth_date" type="date"></label></div>
+      <div class="field-row"><label>Okulu<input name="school" placeholder="Örn. TED Atakent"></label><label>Tuttuğu takım<input name="favorite_team" placeholder="Örn. Beşiktaş"></label></div>
       <div class="field-row"><label>Başlangıç avatarı<select name="avatar_key">{% for key,emoji in avatars.items() %}<option value="{{ key }}">{{ emoji }} {{ key }}</option>{% endfor %}</select></label><label>Görev şablonu<select name="template_key"><option value="">Boş profil</option><option value="uzay">Uzay görevleri</option><option value="toprak">Toprak görevleri</option></select></label></div>
       <button class="btn btn-primary full">Çocuk profilini oluştur</button>
     </form>

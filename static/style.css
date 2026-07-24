@@ -808,3 +808,11 @@ svg {
         padding: 10px 12px !important;
     }
 }
+
+/* FamilyHero 4.1 profile and note states */
+.fh-note-display{display:flex;gap:10px;align-items:flex-start;flex:1;padding:12px 14px;border:1px solid #e5e7eb;border-radius:12px;background:#f8fafc;color:#334155;min-height:46px}
+.fh-note-display[hidden],.fh-note-field[hidden],.fh-complete-button[hidden]{display:none!important}
+.fh-profile-card{background:#fff;border:1px solid #e5e7eb;border-radius:22px;padding:28px;box-shadow:0 12px 30px rgba(15,23,42,.06)}
+.fh-profile-hero{display:flex;align-items:center;gap:18px;margin-bottom:24px}.fh-profile-avatar{font-size:52px}.fh-profile-hero h2{margin:0}.fh-profile-hero p{margin:4px 0;color:#64748b}
+.fh-profile-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-bottom:22px}.fh-profile-grid>div{padding:16px;border:1px solid #e5e7eb;border-radius:14px;background:#f8fafc}.fh-profile-grid small{display:block;color:#64748b;margin-bottom:5px}.fh-profile-grid strong{word-break:break-word}
+@media(max-width:700px){.fh-profile-grid{grid-template-columns:1fr}.fh-task-action{align-items:stretch}.fh-note-display{width:100%}}

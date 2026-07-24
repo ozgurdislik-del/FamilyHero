@@ -1,0 +1,16 @@
+{% extends "child_base.html" %}
+{% block title %}Profilim | FamilyHero{% endblock %}
+{% block page_name %}Profilim{% endblock %}
+{% block content %}
+<section class="fh-page-heading"><div><span class="fh-page-kicker">KİŞİSEL BİLGİLER</span><h1>Profilim</h1><p>Sistemde kayıtlı bilgilerini buradan görebilirsin.</p></div></section>
+<section class="fh-profile-card">
+  <div class="fh-profile-hero"><span class="fh-profile-avatar">{{ avatars.get(child.avatar_key,'🙂') }}</span><div><h2>{{ child.name }}</h2><p>@{{ child.child_key }} · {{ child.title }}</p></div></div>
+  <div class="fh-profile-grid">
+    <div><small>E-posta</small><strong>{{ child.email or 'Henüz girilmedi' }}</strong></div>
+    <div><small>Doğum tarihi</small><strong>{{ child.birth_date or 'Henüz girilmedi' }}</strong></div>
+    <div><small>Okulu</small><strong>{{ child.school or 'Henüz girilmedi' }}</strong></div>
+    <div><small>Tuttuğu takım</small><strong>{{ child.favorite_team or 'Henüz girilmedi' }}</strong></div>
+  </div>
+  <a class="btn btn-primary" href="{{ url_for('choose_avatar') }}">Avatarımı değiştir</a>
+</section>
+{% endblock %}

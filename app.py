@@ -15,6 +15,7 @@ from database import AVATARS, GOAL_SEEDS, SEED_DATA, copy_template, get_db, init
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("FAMILYHERO_SECRET_KEY", "familyhero-local-key")
 init_db()
+app.logger.info("FamilyHero PostgreSQL veritabanı hazır; DATABASE_URL kullanılıyor.")
 
 ISTANBUL_TZ = ZoneInfo("Europe/Istanbul")
 
@@ -210,7 +211,7 @@ def save_task(task_id):
     child = current_child()
     selected, editable = allowed_completion_date(request.form.get("completion_date"))
     if not editable:
-        flash("Bu güne ait kayıt süresi kapandı.", "error")
+        flash("Zaman doldu; düne ait veri giremezsiniz.", "error")
         return redirect(url_for("child_tasks", date=selected.isoformat()))
     completion_date = selected.isoformat()
     note = request.form.get("note", "").strip()[:250]
@@ -231,7 +232,7 @@ def undo_task(task_id):
     child = current_child()
     selected, editable = allowed_completion_date(request.form.get("completion_date"))
     if not editable:
-        flash("Bu güne ait kayıt süresi kapandı.", "error")
+        flash("Zaman doldu; düne ait veri giremezsiniz.", "error")
         return redirect(url_for("child_tasks", date=selected.isoformat()))
     completion_date = selected.isoformat()
     with get_db() as conn:
@@ -239,6 +240,13 @@ def undo_task(task_id):
             abort(404)
         conn.execute("DELETE FROM completions WHERE task_id=? AND completion_date=?", (task_id, completion_date))
     return redirect(url_for("child_tasks", date=completion_date))
+
+
+@app.route("/profile")
+@child_login_required
+def child_profile():
+    child = current_child()
+    return render_template("child_profile.html", child=child, avatars=AVATARS)
 
 
 @app.route("/profile/avatar", methods=["GET", "POST"])
@@ -342,6 +350,61 @@ def admin_panel():
     return render_template("admin.html", children=children, avatars=AVATARS)
 
 
+@app.route("/admin/children/<int:child_id>", methods=["GET", "POST"])
+@admin_required
+def admin_child_profile(child_id):
+    with get_db() as conn:
+        child = conn.execute("SELECT * FROM children WHERE id=?", (child_id,)).fetchone()
+        if not child:
+            abort(404)
+        if request.method == "POST":
+            name = request.form.get("name", "").strip()
+            email = request.form.get("email", "").strip().lower() or None
+            birth_date = request.form.get("birth_date", "").strip() or None
+            favorite_team = request.form.get("favorite_team", "").strip()
+            school = request.form.get("school", "").strip()
+            title = request.form.get("title", "").strip() or "Süper Kaşif"
+            if not name:
+                flash("Ad soyad alanı boş bırakılamaz.", "error")
+            else:
+                try:
+                    conn.execute(
+                        """UPDATE children SET name=?,email=?,birth_date=?,favorite_team=?,school=?,title=?,updated_at=CURRENT_TIMESTAMP WHERE id=?""",
+                        (name, email, birth_date, favorite_team, school, title, child_id),
+                    )
+                    flash("Çocuk profil bilgileri güncellendi.", "success")
+                    return redirect(url_for("admin_child_profile", child_id=child_id))
+                except Exception:
+                    flash("Bilgiler kaydedilemedi. E-posta başka bir profilde kullanılıyor olabilir.", "error")
+        child = conn.execute("SELECT * FROM children WHERE id=?", (child_id,)).fetchone()
+        task_count = conn.execute("SELECT COUNT(*) FROM tasks WHERE child_id=? AND active=1", (child_id,)).fetchone()[0]
+        total_score = conn.execute("SELECT COALESCE(SUM(t.points),0) FROM completions cp JOIN tasks t ON t.id=cp.task_id WHERE t.child_id=?", (child_id,)).fetchone()[0]
+    return render_template("admin_child_profile.html", child=child, avatars=AVATARS, task_count=task_count, total_score=total_score)
+
+
+@app.post("/admin/children/<int:child_id>/send-password-reset")
+@admin_required
+def admin_send_password_reset(child_id):
+    with get_db() as conn:
+        child = conn.execute("SELECT id,name,email FROM children WHERE id=?", (child_id,)).fetchone()
+    if not child:
+        abort(404)
+    if not child["email"]:
+        flash("Bu çocuk için kayıtlı e-posta adresi yok.", "error")
+        return redirect(url_for("admin_child_profile", child_id=child_id))
+    token = password_serializer().dumps({"child_id": child["id"], "email": child["email"]})
+    reset_url = url_for("reset_password", token=token, _external=True)
+    try:
+        if send_reset_email(child["email"], reset_url):
+            flash(f"Şifre sıfırlama bağlantısı {child['email']} adresine gönderildi.", "success")
+        else:
+            flash("E-posta gönderilemedi. Railway SMTP değişkenlerini kontrol edin.", "error")
+    except Exception:
+        app.logger.exception("Yönetici şifre sıfırlama e-postası gönderilemedi")
+        flash("E-posta gönderilirken hata oluştu. SMTP ayarlarını kontrol edin.", "error")
+    return redirect(url_for("admin_child_profile", child_id=child_id))
+
+
 @app.post("/admin/children/add")
 @admin_required
 def admin_add_child():
@@ -350,6 +413,9 @@ def admin_add_child():
     password = request.form.get("password", "")
     email = request.form.get("email", "").strip().lower()
     title = request.form.get("title", "Süper Kaşif").strip() or "Süper Kaşif"
+    birth_date = request.form.get("birth_date", "").strip() or None
+    favorite_team = request.form.get("favorite_team", "").strip()
+    school = request.form.get("school", "").strip()
     template_key = request.form.get("template_key", "")
     avatar_key = request.form.get("avatar_key", "scientist")
 
@@ -365,8 +431,8 @@ def admin_add_child():
     try:
         with get_db() as conn:
             cur = conn.execute(
-                "INSERT INTO children(child_key,name,email,title,password_hash,avatar_key) VALUES(?,?,?,?,?,?)",
-                (child_key, name, email, title, generate_password_hash(password), avatar_key),
+                "INSERT INTO children(child_key,name,email,title,password_hash,avatar_key,birth_date,favorite_team,school) VALUES(?,?,?,?,?,?,?,?,?)",
+                (child_key, name, email, title, generate_password_hash(password), avatar_key, birth_date, favorite_team, school),
             )
             new_child_id = cur.lastrowid
             if template_key in SEED_DATA:

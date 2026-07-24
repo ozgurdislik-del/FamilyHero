@@ -1,0 +1,20 @@
+{% extends "admin_base.html" %}
+{% block title %}{{ child.name }} | FamilyHero{% endblock %}
+{% block breadcrumb %}Çocuk Profili{% endblock %}
+{% block content %}
+<section class="page-title-row"><div><span class="eyebrow">ÇOCUK PROFİLİ</span><h1>{{ child.name }}</h1><p>@{{ child.child_key }} · {{ task_count }} aktif görev · {{ total_score }} puan</p></div><a class="btn" href="{{ url_for('admin_panel') }}">← Geri</a></section>
+<section class="content-grid dashboard-grid">
+<article class="card"><div class="card-header"><div><h2>Profil bilgileri</h2><p>Çocuğun temel bilgilerini görüntüleyin ve güncelleyin.</p></div></div>
+<form method="post" class="modern-form">
+  <div class="field-row"><label>Ad soyad<input name="name" value="{{ child.name }}" required></label><label>Kullanıcı adı<input value="{{ child.child_key }}" disabled></label></div>
+  <div class="field-row"><label>E-posta<input name="email" type="email" value="{{ child.email or '' }}"></label><label>Doğum tarihi<input name="birth_date" type="date" value="{{ child.birth_date or '' }}"></label></div>
+  <div class="field-row"><label>Okulu<input name="school" value="{{ child.school or '' }}"></label><label>Tuttuğu takım<input name="favorite_team" value="{{ child.favorite_team or '' }}"></label></div>
+  <div class="field-row"><label>Unvan<input name="title" value="{{ child.title }}"></label><span></span></div>
+  <button class="btn btn-primary full">Profil bilgilerini kaydet</button>
+</form></article>
+<article class="card"><div class="card-header"><div><h2>Hesap işlemleri</h2><p>Şifre sıfırlama bağlantısını kayıtlı e-posta adresine gönderin.</p></div></div>
+<div class="admin-profile-summary"><div class="profile-avatar" style="font-size:42px">{{ avatars.get(child.avatar_key,'🙂') }}</div><p><b>E-posta:</b> {{ child.email or 'Kayıtlı değil' }}</p></div>
+<form method="post" action="{{ url_for('admin_send_password_reset', child_id=child.id) }}"><button class="btn btn-primary full" {% if not child.email %}disabled{% endif %}>Şifre sıfırlama linki gönder</button></form>
+<a class="btn full" style="margin-top:10px" href="{{ url_for('admin_report', child_id=child.id) }}">Çocuk raporunu aç</a>
+</article></section>
+{% endblock %}

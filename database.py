@@ -354,6 +354,9 @@ def init_db():
             title TEXT NOT NULL DEFAULT 'Süper Kaşif',
             password_hash TEXT,
             avatar_key TEXT NOT NULL DEFAULT 'scientist',
+            birth_date DATE,
+            favorite_team TEXT NOT NULL DEFAULT '',
+            school TEXT NOT NULL DEFAULT '',
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
@@ -416,6 +419,9 @@ def init_db():
         );
         """)
         conn.execute('ALTER TABLE children ADD COLUMN IF NOT EXISTS email TEXT')
+        conn.execute('ALTER TABLE children ADD COLUMN IF NOT EXISTS birth_date DATE')
+        conn.execute("ALTER TABLE children ADD COLUMN IF NOT EXISTS favorite_team TEXT NOT NULL DEFAULT ''")
+        conn.execute("ALTER TABLE children ADD COLUMN IF NOT EXISTS school TEXT NOT NULL DEFAULT ''")
         conn.execute('ALTER TABLE children ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP')
         conn.execute('ALTER TABLE children ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP')
         conn.execute('ALTER TABLE completions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP')

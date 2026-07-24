@@ -1,29 +1,22 @@
-FAMILYHERO POSTGRESQL KURULUMU
+FAMILYHERO 4.1 - RAILWAY KURULUMU
 
-1) Railway > FamilyHero > Variables ekranında şu referansı ekleyin:
+1. FamilyHero servisinde Variables bölümünde şu değişken bulunmalı:
 DATABASE_URL=${{Postgres.DATABASE_URL}}
 
-2) Güvenli oturum ve şifre sıfırlama bağlantıları için ekleyin:
-FAMILYHERO_SECRET_KEY=uzun-rastgele-bir-deger
-
-3) E-posta ile şifre sıfırlama için SMTP değişkenleri:
+2. E-posta ile şifre sıfırlama için ayrıca ekleyin:
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
-SMTP_USERNAME=Gmail adresiniz
-SMTP_PASSWORD=Google uygulama şifreniz
-SMTP_FROM=Gmail adresiniz
+SMTP_USERNAME=<gmail adresiniz>
+SMTP_PASSWORD=<Google uygulama şifreniz>
+SMTP_FROM=<gmail adresiniz>
+FAMILYHERO_SECRET_KEY=<uzun rastgele bir anahtar>
 
-4) Bu projenin dosyalarını GitHub reposundaki mevcut dosyaların üzerine kopyalayın,
-commit ve push yapın. Railway otomatik deploy edecektir.
+3. Dosyaları mevcut proje klasörünün üzerine kopyalayın, ardından:
+git add .
+git commit -m "PostgreSQL profil ve not sistemi"
+git push origin main
 
-5) İlk PostgreSQL açılışında, paket içindeki familyhero.db verileri PostgreSQL'e bir kez aktarılır.
-PostgreSQL'de çocuk kaydı varsa yeniden aktarım yapılmaz.
+4. Railway Deploy Logs içinde şu satırı arayın:
+FamilyHero PostgreSQL veritabanı hazır; DATABASE_URL kullanılıyor.
 
-Yeni özellikler:
-- PostgreSQL kalıcı veri
-- Bugün ve dün kayıt seçimi
-- Dünün kayıtlarını İstanbul saatiyle ertesi gün 11:00'e kadar düzenleme
-- 11:00 sonrası dünü kilitleme
-- Çocuk hesabında zorunlu e-posta
-- Şifremi unuttum ve e-posta ile şifre yenileme
-- completion created_at / updated_at kayıtları
+5. Test: görev girin, çıkış yapın, tekrar girin; kayıt korunmalıdır.
