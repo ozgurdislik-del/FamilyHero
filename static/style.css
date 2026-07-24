@@ -906,3 +906,16 @@ svg {
   .fh-note-summary{flex:1 1 calc(100% - 60px)}
   .fh-note-editor{flex-basis:100%}
 }
+
+
+/* FamilyHero 4.8 - Her gün değişen kayan bilgi bandı */
+.hero-dashboard-banner{padding-bottom:54px;overflow:hidden}
+.daily-fact-ticker{position:absolute;left:0;right:0;bottom:0;height:38px;display:flex;align-items:center;background:rgba(20,48,30,.24);border-top:1px solid rgba(255,255,255,.18);color:#fff;overflow:hidden;z-index:2}
+.daily-fact-label{height:100%;display:flex;align-items:center;flex:0 0 auto;padding:0 14px;background:rgba(18,38,30,.42);font-size:9px;font-weight:900;letter-spacing:.10em;white-space:nowrap}
+.daily-fact-window{min-width:0;flex:1;overflow:hidden;mask-image:linear-gradient(90deg,transparent,#000 4%,#000 96%,transparent);-webkit-mask-image:linear-gradient(90deg,transparent,#000 4%,#000 96%,transparent)}
+.daily-fact-track{display:flex;width:max-content;gap:70px;white-space:nowrap;will-change:transform;animation:familyheroFactScroll 24s linear infinite}
+.daily-fact-track span{font-size:11px;font-weight:700;letter-spacing:.01em}
+.daily-fact-ticker:hover .daily-fact-track{animation-play-state:paused}
+@keyframes familyheroFactScroll{from{transform:translateX(12%)}to{transform:translateX(-50%)}}
+@media(max-width:620px){.hero-dashboard-banner{padding-bottom:58px}.daily-fact-ticker{height:42px}.daily-fact-label{padding:0 9px;font-size:8px}.daily-fact-track{animation-duration:20s;gap:50px}.daily-fact-track span{font-size:10px}}
+@media(prefers-reduced-motion:reduce){.daily-fact-track{animation:none;transform:none;padding-left:14px}}

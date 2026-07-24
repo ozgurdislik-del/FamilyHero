@@ -20,6 +20,59 @@ app.logger.info("FamilyHero PostgreSQL veritabanı hazır; DATABASE_URL kullanı
 
 ISTANBUL_TZ = ZoneInfo("Europe/Istanbul")
 
+DAILY_FACTS = [
+    "İtalya’nın başkenti Roma’dır. Roma’nın efsane futbolcularından biri Francesco Totti’dir. ⚽",
+    "Aziz Sancar, DNA onarımı üzerine çalışmalarıyla 2015 Nobel Kimya Ödülü’nü kazandı. 🧬",
+    "Dünyanın en büyük okyanusu Pasifik Okyanusu’dur. 🌊",
+    "Satrançta her oyuncu oyuna 16 taşla başlar. ♟️",
+    "Bir ahtapotun üç kalbi vardır. 🐙",
+    "Eyfel Kulesi yaz aylarında sıcaklık nedeniyle birkaç santimetre uzayabilir. 🗼",
+    "Türkiye’nin en uzun nehri Kızılırmak’tır. 🏞️",
+    "Arılar birbirlerine yön tarif etmek için dans eder. 🐝",
+    "Dünya, Güneş’in etrafındaki turunu yaklaşık 365 gün 6 saatte tamamlar. 🌍",
+    "İnsan vücudundaki en büyük organ deridir. 🧑‍🔬",
+    "Mavi balinalar, Dünya’da yaşamış en büyük hayvanlardır. 🐋",
+    "Bir yıldırımın sıcaklığı Güneş’in yüzeyinden daha yüksek olabilir. ⚡",
+    "Japonya binlerce adadan oluşan bir ülkedir. 🗾",
+    "Penguenler kuş olmalarına rağmen uçamaz; çok iyi yüzücüdürler. 🐧",
+    "Ay’daki yerçekimi Dünya’dakinin yaklaşık altıda biridir. 🌙",
+    "Dünyanın en yüksek dağı Everest’tir. 🏔️",
+    "Leonardo da Vinci hem sanatçı hem de mucit ve bilim insanıydı. 🎨",
+    "Filler hortumlarını su içmek, koklamak ve nesneleri tutmak için kullanır. 🐘",
+    "Bir gün 24 saat, bir saat 60 dakika ve bir dakika 60 saniyedir. ⏰",
+    "Kutup ayılarının derisi siyahtır; tüyleri ise ışığı yansıttığı için beyaz görünür. 🐻‍❄️",
+    "Dünyanın en büyük sıcak çölü Sahra Çölü’dür. 🏜️",
+    "Kalp, bir günde yaklaşık 100 bin kez atabilir. ❤️",
+    "Mozart ilk bestelerini çocuk yaşta yapmaya başladı. 🎼",
+    "Bukalemunların gözleri birbirinden bağımsız hareket edebilir. 🦎",
+    "Türkiye iki kıta üzerinde yer alır: Avrupa ve Asya. 🌉",
+    "Güneş bir yıldızdır ve Dünya’ya en yakın yıldızdır. ☀️",
+    "Dünyanın en hızlı kara hayvanı çitadır. 🐆",
+    "İstanbul geçmişte Roma, Bizans ve Osmanlı imparatorluklarına başkentlik yaptı. 🏛️",
+    "Su, deniz seviyesinde 100 derecede kaynar. 💧",
+    "Yunuslar birbirleriyle ıslık benzeri seslerle iletişim kurar. 🐬",
+    "Basketbolda bir takım sahada beş oyuncuyla mücadele eder. 🏀",
+    "Mars, yüzeyindeki demir oksit nedeniyle Kızıl Gezegen olarak bilinir. 🔴",
+    "Dünyanın en büyük kıtası Asya’dır. 🌏",
+    "Kaplumbağalar milyonlarca yıldır Dünya’da yaşayan canlılardır. 🐢",
+    "Futbolda standart bir maç, uzatmalar hariç 90 dakika sürer. ⚽",
+    "Bitkiler fotosentez sırasında ışık enerjisini kullanır. 🌿",
+    "Bir kar tanesinin kristal yapısı genellikle altı köşelidir. ❄️",
+    "Nil Nehri, dünyanın en uzun nehirlerinden biridir. 🌍",
+    "Kediler çok yüksek frekanslı sesleri insanlardan daha iyi duyabilir. 🐈",
+    "Türk bayrağındaki yıldız beş köşelidir. 🇹🇷",
+    "Satürn’ün belirgin halkaları buz ve kaya parçalarından oluşur. 🪐",
+    "İnsan beyninin büyük bölümü sudan oluşur. 🧠",
+    "Zürafaların dili yaklaşık yarım metre uzunluğa ulaşabilir. 🦒",
+    "Dünyanın en küçük kuşlarından biri arı sinek kuşudur. 🐦",
+    "Pusulanın kırmızı ucu genellikle kuzeyi gösterir. 🧭",
+    "Olimpiyat halkaları beş kıtayı temsil eden beş halkadan oluşur. 🏅",
+    "Gökkuşağı, ışığın su damlalarında kırılması ve yansımasıyla oluşur. 🌈",
+    "Bir insanın kemik sayısı yetişkinlikte genellikle 206’dır. 🦴",
+    "Dünya’nın doğal uydusu Ay’dır. 🌙",
+    "Kangurular güçlü arka bacakları sayesinde uzun mesafelere sıçrayabilir. 🦘",
+]
+
 def istanbul_now():
     return datetime.now(ISTANBUL_TZ)
 
@@ -263,7 +316,8 @@ def dashboard():
         motivation_message=f"{leader['name']} bugün {difference} puan önde. Bir görev daha tamamlayarak farkı kapatabilirsin! 🚀"
     else:
         motivation_message="İlk puanı sen kazan ve aile sıralamasında öne geç! ⚡"
-    return render_template("child_dashboard.html", child=child, avatars=AVATARS, today=today,
+    daily_fact = DAILY_FACTS[date.fromisoformat(today).toordinal() % len(DAILY_FACTS)]
+    return render_template("child_dashboard.html", child=child, avatars=AVATARS, today=today, daily_fact=daily_fact,
         today_score=today_score,total_score=total_score,task_count=task_count,done_count=done_count,
         completion_percent=completion_percent,goals=goals,last_reward=last_reward,
         family_leaderboard=family_leaderboard,current_rank=current_rank,motivation_message=motivation_message,
@@ -818,7 +872,11 @@ def admin_delete_grant(grant_id):
 @admin_required
 def admin_polls():
     today = istanbul_now().date().isoformat()
+    edit_id = request.args.get("edit_id", type=int)
+    copy_id = request.args.get("copy_id", type=int)
+
     if request.method == "POST":
+        poll_id = request.form.get("poll_id", type=int)
         title = request.form.get("title", "").strip()[:120]
         description = request.form.get("description", "").strip()[:250]
         poll_date = request.form.get("poll_date", today)
@@ -826,24 +884,60 @@ def admin_polls():
             datetime.strptime(poll_date, "%Y-%m-%d")
         except ValueError:
             poll_date = today
+
         option_texts = request.form.getlist("option_text")
         option_emojis = request.form.getlist("option_emoji")
         options = []
         for index, text in enumerate(option_texts[:6]):
             text = text.strip()[:100]
             if text:
-                emoji = option_emojis[index].strip()[:8] if index < len(option_emojis) else "•"
-                options.append((emoji or "•", text))
-        if not title or len(options) < 2:
-            flash("Oylama başlığı ve en az iki seçenek zorunludur.", "error")
-        else:
-            with get_db() as conn:
-                conn.execute("UPDATE family_polls SET active=0,updated_at=CURRENT_TIMESTAMP WHERE poll_date=?", (poll_date,))
-                cur = conn.execute("INSERT INTO family_polls(title,description,poll_date) VALUES(?,?,?)", (title, description, poll_date))
+                emoji = option_emojis[index].strip()[:8] if index < len(option_emojis) else ""
+                options.append((emoji, text))
+
+        with get_db() as conn:
+            existing = conn.execute(
+                "SELECT p.*,COUNT(v.id) vote_count FROM family_polls p LEFT JOIN family_poll_votes v ON v.poll_id=p.id WHERE p.id=? GROUP BY p.id,p.title,p.description,p.poll_date,p.active,p.created_at,p.updated_at",
+                (poll_id,),
+            ).fetchone() if poll_id else None
+
+            if not title:
+                flash("Oylama başlığı zorunludur.", "error")
+            elif existing and existing["vote_count"] > 0:
+                conn.execute(
+                    "UPDATE family_polls SET title=?,description=?,poll_date=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                    (title, description, poll_date, poll_id),
+                )
+                flash("Oylama güncellendi. Oy kullanıldığı için seçenekler korunmuştur.", "success")
+                return redirect(url_for("admin_polls"))
+            elif len(options) < 2:
+                flash("En az iki seçenek girilmelidir.", "error")
+            elif existing:
+                conn.execute(
+                    "UPDATE family_polls SET title=?,description=?,poll_date=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                    (title, description, poll_date, poll_id),
+                )
+                conn.execute("DELETE FROM family_poll_options WHERE poll_id=?", (poll_id,))
                 for order, (emoji, text) in enumerate(options):
-                    conn.execute("INSERT INTO family_poll_options(poll_id,option_text,emoji,sort_order) VALUES(?,?,?,?)", (cur.lastrowid, text, emoji, order))
-            flash("Aile oylaması yayınlandı.", "success")
-            return redirect(url_for("admin_polls"))
+                    conn.execute(
+                        "INSERT INTO family_poll_options(poll_id,option_text,emoji,sort_order) VALUES(?,?,?,?)",
+                        (poll_id, text, emoji, order),
+                    )
+                flash("Oylama güncellendi.", "success")
+                return redirect(url_for("admin_polls"))
+            else:
+                conn.execute("UPDATE family_polls SET active=0,updated_at=CURRENT_TIMESTAMP WHERE poll_date=?", (poll_date,))
+                cur = conn.execute(
+                    "INSERT INTO family_polls(title,description,poll_date) VALUES(?,?,?)",
+                    (title, description, poll_date),
+                )
+                for order, (emoji, text) in enumerate(options):
+                    conn.execute(
+                        "INSERT INTO family_poll_options(poll_id,option_text,emoji,sort_order) VALUES(?,?,?,?)",
+                        (cur.lastrowid, text, emoji, order),
+                    )
+                flash("Aile oylaması yayınlandı.", "success")
+                return redirect(url_for("admin_polls"))
+
     with get_db() as conn:
         polls = conn.execute(
             """SELECT p.*,COUNT(DISTINCT v.id) vote_count,COUNT(DISTINCT o.id) option_count
@@ -854,6 +948,7 @@ def admin_polls():
                ORDER BY p.poll_date DESC,p.id DESC LIMIT 30"""
         ).fetchall()
         poll_details = {}
+        poll_voters = {}
         for poll in polls:
             poll_details[poll["id"]] = conn.execute(
                 """SELECT o.*,COUNT(v.id) vote_count
@@ -861,7 +956,30 @@ def admin_polls():
                    WHERE o.poll_id=? GROUP BY o.id,o.poll_id,o.option_text,o.emoji,o.sort_order
                    ORDER BY o.sort_order,o.id""", (poll["id"],)
             ).fetchall()
-    return render_template("admin_polls.html", polls=polls, poll_details=poll_details, today=today)
+            poll_voters[poll["id"]] = conn.execute(
+                """SELECT c.name FROM family_poll_votes v
+                   JOIN children c ON c.id=v.child_id
+                   WHERE v.poll_id=? ORDER BY c.name""",
+                (poll["id"],),
+            ).fetchall()
+
+        builder_poll = None
+        builder_options = []
+        builder_mode = "new"
+        source_id = edit_id or copy_id
+        if source_id:
+            builder_poll = conn.execute("SELECT * FROM family_polls WHERE id=?", (source_id,)).fetchone()
+            if builder_poll:
+                builder_options = conn.execute(
+                    "SELECT * FROM family_poll_options WHERE poll_id=? ORDER BY sort_order,id",
+                    (source_id,),
+                ).fetchall()
+                builder_mode = "edit" if edit_id else "copy"
+
+    return render_template(
+        "admin_polls.html", polls=polls, poll_details=poll_details, poll_voters=poll_voters,
+        today=today, builder_poll=builder_poll, builder_options=builder_options, builder_mode=builder_mode
+    )
 
 
 @app.post("/admin/polls/<int:poll_id>/toggle")

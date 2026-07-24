@@ -5,14 +5,27 @@
 <div class="admin-page-head"><div><span class="eyebrow">AİLE MERKEZİ</span><h1>Aile Oylamaları</h1><p>Yemekten hafta sonu planına kadar istediğiniz konuda çocukların fikrini alın. Günlük oylamalar saat 16:00'da kapanır.</p></div></div>
 <div class="poll-admin-layout">
 <section class="surface-card poll-builder">
-<header class="surface-head"><div><small>YENİ OYLAMA</small><h2>Bugünün sorusunu oluştur</h2></div><span class="date-chip">16:00'da kapanır</span></header>
+<header class="surface-head"><div><small>{% if builder_mode=='edit' %}OYLAMAYI DÜZENLE{% elif builder_mode=='copy' %}OYLAMAYI KOPYALA{% else %}YENİ OYLAMA{% endif %}</small><h2>{% if builder_mode=='edit' %}Oylama bilgilerini güncelle{% elif builder_mode=='copy' %}Kopyadan yeni oylama oluştur{% else %}Bugünün sorusunu oluştur{% endif %}</h2></div><span class="date-chip">16:00'da kapanır</span></header>
 <form method="post" class="poll-builder-form">
-<label>Oylama başlığı<input name="title" maxlength="120" required placeholder="Örn. Bu akşam ne yiyelim?"></label>
-<label>Kısa açıklama <small>(isteğe bağlı)</small><textarea name="description" maxlength="250" rows="2" placeholder="Çocukların seçim yapmasına yardımcı olacak kısa bir not"></textarea></label>
-<label>Oylama günü<input type="date" name="poll_date" value="{{ today }}" required></label>
-<div class="poll-option-editor"><div class="poll-editor-head"><strong>Seçenekler</strong><small>En az 2, en fazla 6 seçenek</small></div>
-{% for i in range(6) %}<div class="poll-editor-row"><input class="emoji-input" name="option_emoji" value="{{ ['🍝','🔥','🛵','🍽️','🎬','🎲'][i] }}" maxlength="8"><input name="option_text" {% if i<2 %}required{% endif %} maxlength="100" placeholder="Seçenek {{ i+1 }}"></div>{% endfor %}
-</div><button class="primary-button" type="submit">Oylamayı yayınla</button></form></section>
+{% if builder_mode=='edit' and builder_poll %}<input type="hidden" name="poll_id" value="{{ builder_poll.id }}">{% endif %}
+<label>Oylama başlığı<input name="title" maxlength="120" required placeholder="Örn. Bu akşam ne yiyelim?" value="{{ builder_poll.title if builder_poll else '' }}"></label>
+<label>Kısa açıklama <small>(isteğe bağlı)</small><textarea name="description" maxlength="250" rows="2" placeholder="Çocukların seçim yapmasına yardımcı olacak kısa bir not">{{ builder_poll.description if builder_poll else '' }}</textarea></label>
+<label>Oylama günü<input type="date" name="poll_date" value="{% if builder_mode=='copy' %}{{ today }}{% elif builder_poll %}{{ builder_poll.poll_date }}{% else %}{{ today }}{% endif %}" required></label>
+<div class="poll-option-editor"><div class="poll-editor-head"><strong>Seçenekler</strong><small>Emoji isteğe bağlıdır · En az 2, en fazla 6 seçenek</small></div>
+{% set has_votes = builder_poll and builder_poll.vote_count is defined and builder_poll.vote_count > 0 %}
+{% for i in range(6) %}
+{% set opt = builder_options[i] if i < builder_options|length else none %}
+<div class="poll-editor-row">
+<input class="emoji-input" name="option_emoji" value="{{ opt.emoji if opt else '' }}" maxlength="8" placeholder="😊" {% if has_votes and builder_mode=='edit' %}readonly{% endif %}>
+<input name="option_text" {% if i<2 %}required{% endif %} maxlength="100" placeholder="Seçenek {{ i+1 }}" value="{{ opt.option_text if opt else '' }}" {% if has_votes and builder_mode=='edit' %}readonly{% endif %}>
+</div>
+{% endfor %}
+{% if has_votes and builder_mode=='edit' %}<div class="poll-edit-warning">Bu ankette oy kullanıldığı için seçenekler değiştirilemez. Başlık, açıklama ve tarih güncellenebilir.</div>{% endif %}
+</div>
+<div class="poll-form-actions"><button class="primary-button" type="submit">{% if builder_mode=='edit' %}Değişiklikleri kaydet{% else %}Oylamayı yayınla{% endif %}</button>{% if builder_poll %}<a class="secondary-button" href="{{ url_for('admin_polls') }}">İptal</a>{% endif %}</div>
+</form></section>
 <section class="surface-card poll-history"><header class="surface-head"><div><small>GEÇMİŞ</small><h2>Son oylamalar</h2></div></header>
-<div class="admin-poll-list">{% for poll in polls %}<article class="admin-poll-card"><div class="admin-poll-title"><div><span>{{ poll.poll_date }}</span><h3>{{ poll.title }}</h3></div><b class="{% if poll.active %}active{% else %}inactive{% endif %}">{% if poll.active %}Yayında{% else %}Kapalı{% endif %}</b></div>{% if poll.description %}<p>{{ poll.description }}</p>{% endif %}<div class="admin-poll-results">{% for option in poll_details[poll.id] %}<div><span>{{ option.emoji }} {{ option.option_text }}</span><strong>{{ option.vote_count }} oy</strong></div>{% endfor %}</div><footer><span>{{ poll.vote_count }} toplam oy</span><div><form method="post" action="{{ url_for('admin_poll_toggle',poll_id=poll.id) }}"><button class="secondary-button" type="submit">{% if poll.active %}Kapat{% else %}Yayınla{% endif %}</button></form><form method="post" action="{{ url_for('admin_poll_delete',poll_id=poll.id) }}" onsubmit="return confirm('Oylama silinsin mi?')"><button class="danger-button" type="submit">Sil</button></form></div></footer></article>{% else %}<div class="empty-soft">Henüz oylama oluşturulmadı.</div>{% endfor %}</div></section></div>
+<div class="admin-poll-list">{% for poll in polls %}<article class="admin-poll-card"><div class="admin-poll-title"><div><span>{{ poll.poll_date }}</span><h3>{{ poll.title }}</h3></div><b class="{% if poll.active %}active{% else %}inactive{% endif %}">{% if poll.active %}Yayında{% else %}Kapalı{% endif %}</b></div>{% if poll.description %}<p>{{ poll.description }}</p>{% endif %}<div class="admin-poll-results">{% for option in poll_details[poll.id] %}<div><span>{% if option.emoji %}<em>{{ option.emoji }}</em>{% endif %}{{ option.option_text }}</span><strong>{{ option.vote_count }} oy</strong></div>{% endfor %}</div>
+{% if poll_voters[poll.id] %}<details class="poll-voters"><summary>Kimler oy verdi? <b>{{ poll_voters[poll.id]|length }}</b></summary><div>{% for voter in poll_voters[poll.id] %}<span>✓ {{ voter.name }}</span>{% endfor %}</div><small>Çocukların hangi seçeneğe oy verdiği gizli tutulur.</small></details>{% endif %}
+<footer><span>{{ poll.vote_count }} toplam oy</span><div class="poll-card-actions"><a class="secondary-button" href="{{ url_for('admin_polls',edit_id=poll.id) }}">✏️ Düzenle</a><a class="secondary-button" href="{{ url_for('admin_polls',copy_id=poll.id) }}">⧉ Kopyala</a><form method="post" action="{{ url_for('admin_poll_toggle',poll_id=poll.id) }}"><button class="secondary-button" type="submit">{% if poll.active %}Kapat{% else %}Yayınla{% endif %}</button></form><form method="post" action="{{ url_for('admin_poll_delete',poll_id=poll.id) }}" onsubmit="return confirm('Oylama silinsin mi?')"><button class="danger-button" type="submit">Sil</button></form></div></footer></article>{% else %}<div class="empty-soft">Henüz oylama oluşturulmadı.</div>{% endfor %}</div></section></div>
 {% endblock %}

@@ -1,0 +1,15 @@
+FAMILYHERO 4.8 - GÜNÜN BİLGİSİ
+
+- Kahraman panelindeki karşılama alanına kayan Günün Bilgisi bandı eklendi.
+- Bilgi her takvim günü otomatik olarak değişir.
+- Aynı gün tüm çocuklarda aynı bilgi görünür.
+- Sayfa yenilendiğinde bilgi değişmez; ertesi gün yeni bilgi gelir.
+- Bant üzerine gelince kayma durur.
+- Telefon ve tablet görünümü uyumludur.
+
+Kurulum:
+1. Dosyaları mevcut FamilyHero proje klasörünün üzerine kopyalayın.
+2. git add .
+3. git commit -m "Gunun bilgisi kayan bandi"
+4. git push origin main
+5. Railway dağıtımı bittikten sonra Ctrl+F5 yapın.
