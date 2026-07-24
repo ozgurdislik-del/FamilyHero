@@ -1,22 +1,5 @@
 {% extends "child_base.html" %}
-{% block title %}Görevlerim | FamilyHero 3.0<script>
-document.querySelectorAll('.js-note-form').forEach(function(form){
-  const toggle=form.querySelector('.js-note-toggle');
-  if(!toggle) return;
-  toggle.addEventListener('click',function(){
-    const display=form.querySelector('.js-note-display');
-    const editor=form.querySelector('.js-note-editor');
-    const save=form.querySelector('.js-note-save');
-    if(display) display.hidden=true;
-    if(editor) editor.hidden=false;
-    if(save) save.hidden=false;
-    toggle.hidden=true;
-    const input=form.querySelector('input[name="note"]');
-    if(input) input.focus();
-  });
-});
-</script>
-{% endblock %}
+{% block title %}Görevlerim | FamilyHero{% endblock %}
 {% block page_name %}Görevlerim{% endblock %}
 {% block content %}
 {% set category_meta = {
@@ -121,4 +104,29 @@ document.querySelectorAll('.js-note-form').forEach(function(form){
   </details>
 {% endfor %}
 </section>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  document.querySelectorAll('.js-note-form').forEach(function (form) {
+    const toggle = form.querySelector('.js-note-toggle');
+    if (!toggle) return;
+
+    toggle.addEventListener('click', function () {
+      const display = form.querySelector('.js-note-display');
+      const editor = form.querySelector('.js-note-editor');
+      const save = form.querySelector('.js-note-save');
+      const input = form.querySelector('input[name="note"]');
+
+      // Bu işlem yalnızca not alanını açar; görevin tamamlanma kaydına dokunmaz.
+      if (display) display.hidden = true;
+      if (editor) editor.hidden = false;
+      if (save) save.hidden = false;
+      toggle.hidden = true;
+      if (input) {
+        input.focus();
+        input.setSelectionRange(input.value.length, input.value.length);
+      }
+    });
+  });
+});
+</script>
 {% endblock %}
