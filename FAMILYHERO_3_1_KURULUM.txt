@@ -1,0 +1,30 @@
+FAMILYHERO 3.1 KURULUM
+
+1) Kalıcı veritabanı
+Railway'de servise bir Volume bağlayın ve mount path olarak /data kullanın.
+Environment variable ekleyin:
+FAMILYHERO_DB_PATH=/data/familyhero.db
+
+Mevcut veriyi korumak için eski familyhero.db dosyanızı Volume içindeki /data/familyhero.db konumuna bir kez taşımanız gerekir.
+Yerel kullanımda değişken verilmezse proje klasöründeki familyhero.db kullanılmaya devam eder.
+
+2) E-posta ile şifre sıfırlama
+Aşağıdaki ortam değişkenlerini ekleyin:
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USERNAME=mailadresiniz@gmail.com
+SMTP_PASSWORD=uygulama_sifresi
+MAIL_FROM=mailadresiniz@gmail.com
+FAMILYHERO_SECRET_KEY=uzun-ve-rastgele-bir-deger
+
+Gmail kullanıyorsanız normal hesap şifresi yerine Google Uygulama Şifresi kullanın.
+SMTP ayarları yoksa güvenlik nedeniyle kullanıcıya yine genel başarı mesajı gösterilir; bağlantı yalnız sunucu loguna yazılır.
+
+3) Dün kayıt kuralı
+Europe/Istanbul saat dilimi kullanılır.
+Bugün her zaman düzenlenebilir.
+Dün, ertesi gün saat 11.00'dan önce düzenlenebilir.
+Saat 11.00 ve sonrasında dün salt okunur olur.
+
+4) Veritabanı geçişi
+Uygulama ilk açılışta children.email ve completions.updated_at alanlarını mevcut verileri silmeden otomatik ekler.

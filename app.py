@@ -1,15 +1,60 @@
 from collections import OrderedDict
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from functools import wraps
 import os
 import re
+import smtplib
+import ssl
+from email.message import EmailMessage
+from zoneinfo import ZoneInfo
 from flask import Flask, abort, flash, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
+from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from database import AVATARS, GOAL_SEEDS, SEED_DATA, copy_template, get_db, init_db
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("FAMILYHERO_SECRET_KEY", "familyhero-local-key")
 init_db()
+
+ISTANBUL_TZ = ZoneInfo("Europe/Istanbul")
+
+def istanbul_now():
+    return datetime.now(ISTANBUL_TZ)
+
+def allowed_completion_date(raw_date):
+    now = istanbul_now()
+    today = now.date()
+    yesterday = today - timedelta(days=1)
+    try:
+        selected = datetime.strptime(raw_date, "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        selected = today
+    editable = selected == today or (selected == yesterday and now.time() < datetime.strptime("11:00", "%H:%M").time())
+    return selected, editable
+
+def password_serializer():
+    return URLSafeTimedSerializer(app.config["SECRET_KEY"], salt="familyhero-password-reset")
+
+def send_reset_email(recipient, reset_url):
+    host = os.environ.get("SMTP_HOST")
+    port = int(os.environ.get("SMTP_PORT", "587"))
+    username = os.environ.get("SMTP_USERNAME")
+    password = os.environ.get("SMTP_PASSWORD")
+    sender = os.environ.get("SMTP_FROM", username or "noreply@familyhero.local")
+    if not all([host, username, password]):
+        app.logger.warning("SMTP ayarları eksik; şifre sıfırlama bağlantısı gönderilemedi: %s", reset_url)
+        return False
+    msg = EmailMessage()
+    msg["Subject"] = "FamilyHero şifre sıfırlama"
+    msg["From"] = sender
+    msg["To"] = recipient
+    msg.set_content(f"FamilyHero şifrenizi yenilemek için bu bağlantıyı kullanın:\n\n{reset_url}\n\nBağlantı 1 saat geçerlidir.")
+    context = ssl.create_default_context()
+    with smtplib.SMTP(host, port, timeout=20) as smtp:
+        smtp.starttls(context=context)
+        smtp.login(username, password)
+        smtp.send_message(msg)
+    return True
 
 
 def child_login_required(view):
@@ -74,7 +119,7 @@ def logout():
 @child_login_required
 def dashboard():
     child = current_child()
-    today = date.today().isoformat()
+    today = istanbul_now().date().isoformat()
     with get_db() as conn:
         tasks = conn.execute(
             """SELECT t.*, CASE WHEN cp.id IS NULL THEN 0 ELSE 1 END done
@@ -116,17 +161,25 @@ def dashboard():
 @app.route("/tasks")
 @child_login_required
 def child_tasks():
-    child = current_child(); today=date.today().isoformat()
+    child = current_child()
+    now = istanbul_now()
+    today_date = now.date()
+    yesterday_date = today_date - timedelta(days=1)
+    selected, editable = allowed_completion_date(request.args.get("date", today_date.isoformat()))
+    if selected not in (today_date, yesterday_date):
+        selected = today_date
+        editable = True
+    selected_date = selected.isoformat()
     with get_db() as conn:
-        tasks=conn.execute("""SELECT t.*,CASE WHEN cp.id IS NULL THEN 0 ELSE 1 END done,COALESCE(cp.note,'') note
+        tasks=conn.execute("""SELECT t.*,CASE WHEN cp.id IS NULL THEN 0 ELSE 1 END done,COALESCE(cp.note,'') note,cp.created_at,cp.updated_at
             FROM tasks t LEFT JOIN completions cp ON cp.task_id=t.id AND cp.completion_date=?
-            WHERE t.child_id=? AND t.active=1 ORDER BY t.sort_order,t.id""",(today,child["id"])).fetchall()
-        today_score=conn.execute("SELECT COALESCE(SUM(t.points),0) FROM completions cp JOIN tasks t ON t.id=cp.task_id WHERE t.child_id=? AND cp.completion_date=?",(child["id"],today)).fetchone()[0]
+            WHERE t.child_id=? AND t.active=1 ORDER BY t.sort_order,t.id""",(selected_date,child["id"])).fetchall()
+        day_score=conn.execute("SELECT COALESCE(SUM(t.points),0) FROM completions cp JOIN tasks t ON t.id=cp.task_id WHERE t.child_id=? AND cp.completion_date=?",(child["id"],selected_date)).fetchone()[0]
         total_score=conn.execute("SELECT COALESCE(SUM(t.points),0) FROM completions cp JOIN tasks t ON t.id=cp.task_id WHERE t.child_id=?",(child["id"],)).fetchone()[0]
     grouped=OrderedDict()
     for task in tasks: grouped.setdefault(task["category"],[]).append(task)
     task_count=len(tasks); done_count=sum(1 for t in tasks if t["done"]); completion_percent=round(done_count*100/task_count) if task_count else 0
-    return render_template("child.html",child=child,grouped=grouped,today_score=today_score,total_score=total_score,today=today,avatars=AVATARS,task_count=task_count,done_count=done_count,completion_percent=completion_percent)
+    return render_template("child.html",child=child,grouped=grouped,today_score=day_score,total_score=total_score,today=selected_date,avatars=AVATARS,task_count=task_count,done_count=done_count,completion_percent=completion_percent,selected_date=selected_date,today_date=today_date.isoformat(),yesterday_date=yesterday_date.isoformat(),editable=editable,is_yesterday=selected==yesterday_date,lock_time="11:00")
 
 
 @app.route("/badges")
@@ -155,29 +208,37 @@ def child_rewards():
 @child_login_required
 def save_task(task_id):
     child = current_child()
-    today = date.today().isoformat()
+    selected, editable = allowed_completion_date(request.form.get("completion_date"))
+    if not editable:
+        flash("Bu güne ait kayıt süresi kapandı.", "error")
+        return redirect(url_for("child_tasks", date=selected.isoformat()))
+    completion_date = selected.isoformat()
     note = request.form.get("note", "").strip()[:250]
     with get_db() as conn:
         task = conn.execute("SELECT id FROM tasks WHERE id=? AND child_id=? AND active=1", (task_id, child["id"])).fetchone()
         if not task:
             abort(404)
         conn.execute(
-            "INSERT INTO completions(task_id,completion_date,note) VALUES(?,?,?) ON CONFLICT(task_id,completion_date) DO UPDATE SET note=excluded.note",
-            (task_id, today, note),
+            "INSERT INTO completions(task_id,completion_date,note) VALUES(?,?,?) ON CONFLICT(task_id,completion_date) DO UPDATE SET note=excluded.note, updated_at=CURRENT_TIMESTAMP",
+            (task_id, completion_date, note),
         )
-    return redirect(url_for("child_tasks"))
+    return redirect(url_for("child_tasks", date=completion_date))
 
 
 @app.post("/task/<int:task_id>/undo")
 @child_login_required
 def undo_task(task_id):
     child = current_child()
-    today = date.today().isoformat()
+    selected, editable = allowed_completion_date(request.form.get("completion_date"))
+    if not editable:
+        flash("Bu güne ait kayıt süresi kapandı.", "error")
+        return redirect(url_for("child_tasks", date=selected.isoformat()))
+    completion_date = selected.isoformat()
     with get_db() as conn:
         if not conn.execute("SELECT id FROM tasks WHERE id=? AND child_id=?", (task_id, child["id"])).fetchone():
             abort(404)
-        conn.execute("DELETE FROM completions WHERE task_id=? AND completion_date=?", (task_id, today))
-    return redirect(url_for("child_tasks"))
+        conn.execute("DELETE FROM completions WHERE task_id=? AND completion_date=?", (task_id, completion_date))
+    return redirect(url_for("child_tasks", date=completion_date))
 
 
 @app.route("/profile/avatar", methods=["GET", "POST"])
@@ -194,6 +255,52 @@ def choose_avatar():
             flash("Avatarın kaydedildi!", "success")
             return redirect(url_for("dashboard"))
     return render_template("avatar.html", child=child, avatars=AVATARS)
+
+
+@app.route("/forgot-password", methods=["GET", "POST"])
+def forgot_password():
+    if request.method == "POST":
+        email = request.form.get("email", "").strip().lower()
+        with get_db() as conn:
+            child = conn.execute("SELECT id,email FROM children WHERE LOWER(email)=?", (email,)).fetchone()
+        if child:
+            token = password_serializer().dumps({"child_id": child["id"], "email": child["email"]})
+            reset_url = url_for("reset_password", token=token, _external=True)
+            try:
+                sent = send_reset_email(child["email"], reset_url)
+                if not sent and app.debug:
+                    flash(f"Test bağlantısı: {reset_url}", "success")
+            except Exception:
+                app.logger.exception("Şifre sıfırlama e-postası gönderilemedi")
+        flash("Bu e-posta sistemde kayıtlıysa şifre sıfırlama bağlantısı gönderildi.", "success")
+        return redirect(url_for("login"))
+    return render_template("forgot_password.html")
+
+
+@app.route("/reset-password/<token>", methods=["GET", "POST"])
+def reset_password(token):
+    try:
+        payload = password_serializer().loads(token, max_age=3600)
+    except SignatureExpired:
+        flash("Şifre sıfırlama bağlantısının süresi dolmuş.", "error")
+        return redirect(url_for("forgot_password"))
+    except BadSignature:
+        flash("Şifre sıfırlama bağlantısı geçersiz.", "error")
+        return redirect(url_for("forgot_password"))
+    if request.method == "POST":
+        password = request.form.get("password", "")
+        confirm = request.form.get("confirm_password", "")
+        if len(password) < 6 or password != confirm:
+            flash("Şifreler aynı olmalı ve en az 6 karakter olmalı.", "error")
+            return render_template("reset_password.html", token=token)
+        with get_db() as conn:
+            child = conn.execute("SELECT id,email FROM children WHERE id=?", (payload["child_id"],)).fetchone()
+            if not child or (child["email"] or "").lower() != payload["email"].lower():
+                abort(400)
+            conn.execute("UPDATE children SET password_hash=?,updated_at=CURRENT_TIMESTAMP WHERE id=?", (generate_password_hash(password), child["id"]))
+        flash("Şifreniz yenilendi. Şimdi giriş yapabilirsiniz.", "success")
+        return redirect(url_for("login"))
+    return render_template("reset_password.html", token=token)
 
 
 @app.route("/admin/login", methods=["GET", "POST"])
@@ -241,12 +348,13 @@ def admin_add_child():
     name = request.form.get("name", "").strip()
     child_key = request.form.get("child_key", "").strip().lower()
     password = request.form.get("password", "")
+    email = request.form.get("email", "").strip().lower()
     title = request.form.get("title", "Süper Kaşif").strip() or "Süper Kaşif"
     template_key = request.form.get("template_key", "")
     avatar_key = request.form.get("avatar_key", "scientist")
 
-    if not name or not child_key or len(password) < 4:
-        flash("Ad, kullanıcı anahtarı ve en az 4 karakterli şifre gereklidir.", "error")
+    if not name or not child_key or not email or len(password) < 4:
+        flash("Ad, e-posta, kullanıcı anahtarı ve en az 4 karakterli şifre gereklidir.", "error")
         return redirect(url_for("admin_panel"))
     if not re.fullmatch(r"[a-z0-9_-]+", child_key):
         flash("Kullanıcı anahtarı yalnızca küçük harf, rakam, - ve _ içerebilir.", "error")
@@ -257,8 +365,8 @@ def admin_add_child():
     try:
         with get_db() as conn:
             cur = conn.execute(
-                "INSERT INTO children(child_key,name,title,password_hash,avatar_key) VALUES(?,?,?,?,?)",
-                (child_key, name, title, generate_password_hash(password), avatar_key),
+                "INSERT INTO children(child_key,name,email,title,password_hash,avatar_key) VALUES(?,?,?,?,?,?)",
+                (child_key, name, email, title, generate_password_hash(password), avatar_key),
             )
             new_child_id = cur.lastrowid
             if template_key in SEED_DATA:

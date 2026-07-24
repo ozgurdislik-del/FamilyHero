@@ -1,6 +1,6 @@
 {% extends "child_base.html" %}
 {% block title %}Görevlerim | FamilyHero 3.0{% endblock %}
-{% block page_name %}Bugünkü Görevler{% endblock %}
+{% block page_name %}Görevlerim{% endblock %}
 {% block content %}
 {% set category_meta = {
   'Öğrenme Görevleri': ('📘','learning','Öğrenme'),
@@ -12,14 +12,20 @@
 } %}
 <section class="fh-page-heading">
   <div>
-    <span class="fh-page-kicker">BUGÜN · {{ today }}</span>
+    <span class="fh-page-kicker">{% if is_yesterday %}DÜN{% else %}BUGÜN{% endif %} · {{ today }}</span>
     <h1>Görevlerim</h1>
-    <p>Bugünkü görevlerini tamamla, XP kazan ve yeni başarıların kilidini aç.</p>
+    <p>{% if editable %}Görevlerini tamamla, notlarını düzenle ve XP kazan.{% else %}Bu gün kilitlendi; kayıtlar yalnızca görüntülenebilir.{% endif %}</p>
   </div>
   <div class="fh-page-summary">
     <div><strong>{{ done_count }}/{{ task_count }}</strong><span>görev</span></div>
     <div><strong>+{{ today_score }}</strong><span>XP</span></div>
   </div>
+</section>
+
+<section class="fh-date-switcher" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px">
+  <a class="btn {% if selected_date == today_date %}btn-primary{% endif %}" href="{{ url_for('child_tasks', date=today_date) }}">Bugün</a>
+  <a class="btn {% if selected_date == yesterday_date %}btn-primary{% endif %}" href="{{ url_for('child_tasks', date=yesterday_date) }}">Dün</a>
+  {% if is_yesterday %}<small>{% if editable %}Dünün kayıtları bugün {{ lock_time }}'e kadar düzenlenebilir.{% else %}Dünün kayıtları {{ lock_time }} itibarıyla kilitlendi.{% endif %}</small>{% endif %}
 </section>
 
 <section class="fh-daily-progress">
@@ -70,16 +76,16 @@
           {% if item.done %}
           <div class="fh-completed-row">
             <span><b>✓ Tamamlandı</b> · {{ item.points }} XP kazanıldı</span>
-            <form method="post" action="{{ url_for('undo_task',task_id=item.id) }}"><button class="fh-link-button">Geri al</button></form>
+            <form method="post" action="{{ url_for('undo_task',task_id=item.id) }}"><input type="hidden" name="completion_date" value="{{ selected_date }}"><button class="fh-link-button" {% if not editable %}disabled{% endif %}>Geri al</button></form>
           </div>
           {% endif %}
 
-          <form class="fh-task-action" method="post" action="{{ url_for('save_task',task_id=item.id) }}">
+          <form class="fh-task-action" method="post" action="{{ url_for('save_task',task_id=item.id) }}"><input type="hidden" name="completion_date" value="{{ selected_date }}">
             <label class="fh-note-field">
               <span>📝</span>
-              <input name="note" maxlength="250" value="{{ item.note }}" placeholder="{% if item.done %}Notunu güncelle{% else %}Kısa bir not ekle (isteğe bağlı){% endif %}">
+              <input name="note" maxlength="250" value="{{ item.note }}" {% if not editable %}disabled{% endif %} placeholder="{% if item.done %}Notunu güncelle{% else %}Kısa bir not ekle (isteğe bağlı){% endif %}">
             </label>
-            <button class="fh-complete-button">{% if item.done %}Notu Kaydet{% else %}✓ Görevi Bitir{% endif %}</button>
+            <button class="fh-complete-button" {% if not editable %}disabled{% endif %}>{% if item.done %}Notu Kaydet{% else %}✓ Görevi Bitir{% endif %}</button>
           </form>
         </div>
       </article>
