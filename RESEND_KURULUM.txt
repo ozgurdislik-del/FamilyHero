@@ -1,0 +1,22 @@
+FAMILYHERO 4.3 - RESEND KURULUMU
+================================
+
+Railway > FamilyHero > Variables bölümünde şu değişkenler bulunmalıdır:
+
+DATABASE_URL=${{Postgres.DATABASE_URL}}
+RESEND_API_KEY=re_xxxxxxxxxxxxxxxxx
+RESEND_FROM=FamilyHero <onboarding@resend.dev>
+
+Notlar:
+- onboarding@resend.dev ile ilk test yalnızca Resend hesabınızın kayıtlı e-posta adresine gönderilebilir.
+- Başka adreslere gönderim için Resend panelinde kendi alan adınızı doğrulayın ve RESEND_FROM değerini örneğin:
+  FamilyHero <noreply@alanadiniz.com>
+  olarak değiştirin.
+- Bu sürüm SMTP kullanmaz. Eski SMTP_* değişkenlerini test başarılı olduktan sonra silebilirsiniz.
+- Değişkenleri ekledikten sonra Railway'de Deploy/Restart yapılmalıdır.
+
+Test:
+1. Deployment yeşil olsun.
+2. Giriş ekranında Şifremi unuttum bağlantısına basın.
+3. Resend hesabınızda kayıtlı e-postayı girin.
+4. Railway Deploy Logs içinde "Resend e-postası gönderildi" satırını kontrol edin.

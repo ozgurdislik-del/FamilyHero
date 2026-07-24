@@ -3,9 +3,10 @@ from datetime import date, datetime, timedelta
 from functools import wraps
 import os
 import re
-import smtplib
-import ssl
-from email.message import EmailMessage
+import json
+from html import escape
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 from flask import Flask, abort, flash, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -37,25 +38,80 @@ def password_serializer():
     return URLSafeTimedSerializer(app.config["SECRET_KEY"], salt="familyhero-password-reset")
 
 def send_reset_email(recipient, reset_url):
-    host = os.environ.get("SMTP_HOST")
-    port = int(os.environ.get("SMTP_PORT", "587"))
-    username = os.environ.get("SMTP_USERNAME")
-    password = os.environ.get("SMTP_PASSWORD")
-    sender = os.environ.get("SMTP_FROM", username or "noreply@familyhero.local")
-    if not all([host, username, password]):
-        app.logger.warning("SMTP ayarları eksik; şifre sıfırlama bağlantısı gönderilemedi: %s", reset_url)
+    api_key = os.environ.get("RESEND_API_KEY", "").strip()
+    sender = os.environ.get(
+        "RESEND_FROM",
+        "FamilyHero <onboarding@resend.dev>",
+    ).strip()
+
+    if not api_key:
+        app.logger.error("RESEND_API_KEY tanımlı değil; e-posta gönderilemedi.")
         return False
-    msg = EmailMessage()
-    msg["Subject"] = "FamilyHero şifre sıfırlama"
-    msg["From"] = sender
-    msg["To"] = recipient
-    msg.set_content(f"FamilyHero şifrenizi yenilemek için bu bağlantıyı kullanın:\n\n{reset_url}\n\nBağlantı 1 saat geçerlidir.")
-    context = ssl.create_default_context()
-    with smtplib.SMTP(host, port, timeout=20) as smtp:
-        smtp.starttls(context=context)
-        smtp.login(username, password)
-        smtp.send_message(msg)
-    return True
+
+    safe_url = escape(reset_url, quote=True)
+    payload = {
+        "from": sender,
+        "to": [recipient],
+        "subject": "FamilyHero şifre sıfırlama bağlantısı",
+        "html": f"""
+        <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;color:#172033">
+          <h2>FamilyHero şifre sıfırlama</h2>
+          <p>Yeni şifrenizi belirlemek için aşağıdaki düğmeye tıklayın.</p>
+          <p style="margin:28px 0">
+            <a href="{safe_url}"
+               style="display:inline-block;background:#4f5ff5;color:#fff;padding:14px 22px;
+                      text-decoration:none;border-radius:8px;font-weight:700">
+              Şifremi sıfırla
+            </a>
+          </p>
+          <p>Bu isteği siz yapmadıysanız bu e-postayı yok sayabilirsiniz.</p>
+          <p style="font-size:12px;color:#667085;word-break:break-all">
+            Düğme çalışmazsa bağlantıyı tarayıcınıza yapıştırın:<br>{safe_url}
+          </p>
+          <p style="font-size:12px;color:#667085">Bağlantı 1 saat geçerlidir.</p>
+        </div>
+        """,
+    }
+
+    request_obj = Request(
+        "https://api.resend.com/emails",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "User-Agent": "FamilyHero/4.3",
+        },
+        method="POST",
+    )
+
+    try:
+        with urlopen(request_obj, timeout=20) as response:
+            response_body = response.read().decode("utf-8", errors="replace")
+            if 200 <= response.status < 300:
+                app.logger.info(
+                    "Resend e-postası gönderildi. alıcı=%s yanıt=%s",
+                    recipient,
+                    response_body,
+                )
+                return True
+
+            app.logger.error(
+                "Resend beklenmeyen durum kodu döndürdü. status=%s yanıt=%s",
+                response.status,
+                response_body,
+            )
+            return False
+    except HTTPError as exc:
+        error_body = exc.read().decode("utf-8", errors="replace")
+        app.logger.error(
+            "Resend API hatası. status=%s yanıt=%s",
+            exc.code,
+            error_body,
+        )
+        return False
+    except (URLError, TimeoutError, OSError):
+        app.logger.exception("Resend API bağlantısı kurulamadı.")
+        return False
 
 
 def child_login_required(view):
