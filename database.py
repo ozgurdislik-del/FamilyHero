@@ -441,6 +441,94 @@ def init_db():
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(poll_id, child_id)
         );
+
+        /* Sprint 2 foundation: organization-aware identity and authorization.
+           Existing children/admins remain operational during the transition. */
+        CREATE TABLE IF NOT EXISTS users (
+            id BIGSERIAL PRIMARY KEY,
+            email TEXT UNIQUE,
+            username TEXT UNIQUE,
+            display_name TEXT NOT NULL,
+            password_hash TEXT,
+            user_type TEXT NOT NULL DEFAULT 'member',
+            active INTEGER NOT NULL DEFAULT 1,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS families (
+            id BIGSERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            slug TEXT NOT NULL UNIQUE,
+            status TEXT NOT NULL DEFAULT 'active',
+            created_by_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS family_memberships (
+            id BIGSERIAL PRIMARY KEY,
+            family_id BIGINT NOT NULL REFERENCES families(id) ON DELETE CASCADE,
+            user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            member_kind TEXT NOT NULL DEFAULT 'adult',
+            child_id BIGINT REFERENCES children(id) ON DELETE SET NULL,
+            status TEXT NOT NULL DEFAULT 'active',
+            joined_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(family_id,user_id),
+            UNIQUE(family_id,child_id)
+        );
+        CREATE TABLE IF NOT EXISTS roles (
+            id BIGSERIAL PRIMARY KEY,
+            role_key TEXT NOT NULL UNIQUE,
+            name TEXT NOT NULL,
+            scope TEXT NOT NULL DEFAULT 'family',
+            system_role INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS permissions (
+            id BIGSERIAL PRIMARY KEY,
+            permission_key TEXT NOT NULL UNIQUE,
+            description TEXT NOT NULL DEFAULT ''
+        );
+        CREATE TABLE IF NOT EXISTS role_permissions (
+            role_id BIGINT NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+            permission_id BIGINT NOT NULL REFERENCES permissions(id) ON DELETE CASCADE,
+            PRIMARY KEY(role_id,permission_id)
+        );
+        CREATE TABLE IF NOT EXISTS membership_roles (
+            membership_id BIGINT NOT NULL REFERENCES family_memberships(id) ON DELETE CASCADE,
+            role_id BIGINT NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+            PRIMARY KEY(membership_id,role_id)
+        );
+        CREATE TABLE IF NOT EXISTS audit_logs (
+            id BIGSERIAL PRIMARY KEY,
+            family_id BIGINT REFERENCES families(id) ON DELETE SET NULL,
+            actor_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+            action_key TEXT NOT NULL,
+            entity_type TEXT NOT NULL,
+            entity_id TEXT,
+            before_data TEXT,
+            after_data TEXT,
+            request_ip TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS feedback_items (
+            id BIGSERIAL PRIMARY KEY,
+            family_id BIGINT REFERENCES families(id) ON DELETE SET NULL,
+            created_by_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+            category TEXT NOT NULL DEFAULT 'general',
+            title TEXT NOT NULL,
+            description TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'received',
+            priority TEXT NOT NULL DEFAULT 'normal',
+            app_version TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS feedback_comments (
+            id BIGSERIAL PRIMARY KEY,
+            feedback_id BIGINT NOT NULL REFERENCES feedback_items(id) ON DELETE CASCADE,
+            author_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+            comment_text TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
         """)
         conn.execute('ALTER TABLE children ADD COLUMN IF NOT EXISTS email TEXT')
         conn.execute('ALTER TABLE children ADD COLUMN IF NOT EXISTS birth_date DATE')
@@ -453,6 +541,28 @@ def init_db():
         import_bundled_sqlite_if_empty(conn)
         if not conn.execute("SELECT 1 FROM admins WHERE username='admin'").fetchone():
             conn.execute('INSERT INTO admins(username,password_hash) VALUES(?,?)', ('admin', generate_password_hash('FamilyHero2026!')))
+        # Sprint 2 bridge records. Legacy login continues to work while new identity tables are adopted route by route.
+        conn.execute("INSERT INTO users(username,display_name,password_hash,user_type) VALUES(?,?,?,?) ON CONFLICT(username) DO NOTHING",
+                     ('admin','FamilyHero Yöneticisi',generate_password_hash('FamilyHero2026!'),'platform_admin'))
+        conn.execute("INSERT INTO families(name,slug) VALUES(?,?) ON CONFLICT(slug) DO NOTHING", ('FamilyHero Ailesi','default-family'))
+        for role_key, role_name, scope, system_role in [
+            ('platform_admin','Platform Yöneticisi','platform',1),
+            ('family_owner','Aile Sahibi','family',1),
+            ('parent','Ebeveyn','family',1),
+            ('child','Çocuk','family',1),
+        ]:
+            conn.execute("INSERT INTO roles(role_key,name,scope,system_role) VALUES(?,?,?,?) ON CONFLICT(role_key) DO NOTHING",
+                         (role_key,role_name,scope,system_role))
+        for permission_key, description in [
+            ('family.view','Aile alanını görüntüleme'),('family.update','Aile ayarlarını değiştirme'),
+            ('member.manage','Aile üyelerini yönetme'),('task.create','Görev oluşturma'),
+            ('task.update','Görev düzenleme'),('task.complete','Görev tamamlama'),
+            ('poll.create','Oylama oluşturma'),('poll.vote','Oylamaya katılma'),
+            ('reward.manage','Ödülleri yönetme'),('feedback.create','Geri bildirim oluşturma'),
+            ('feedback.manage','Geri bildirimleri yönetme'),('audit.view','Denetim kayıtlarını görüntüleme')
+        ]:
+            conn.execute("INSERT INTO permissions(permission_key,description) VALUES(?,?) ON CONFLICT(permission_key) DO NOTHING",
+                         (permission_key,description))
         for key, child in SEED_DATA.items():
             sync_seed_child(conn, key, child)
         for key, pw in {'uzay': 'Uzay123!', 'toprak': 'Toprak123!'}.items():

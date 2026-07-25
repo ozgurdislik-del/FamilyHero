@@ -12,10 +12,11 @@
         <a class="hero-cta" href="{{ url_for('child_tasks') }}">Bugünkü maceraya başla <b>→</b></a>
       </div>
       <div class="hero-character">{{ avatars.get(child.avatar_key,'🙂') }}</div>
-      <div class="daily-fact-ticker" aria-label="Günün bilgisi">
-        <span class="daily-fact-label">💡 GÜNÜN BİLGİSİ</span>
-        <div class="daily-fact-window"><div class="daily-fact-track"><span>{{ daily_fact }}</span><span aria-hidden="true">{{ daily_fact }}</span></div></div>
-      </div>
+    </section>
+
+    <section class="daily-fact-card" aria-label="Günün bilgisi">
+      <span class="daily-fact-icon">💡</span>
+      <div><small>GÜNÜN BİLGİSİ</small><strong>{{ daily_fact }}</strong></div>
     </section>
 
     <section class="child-metric-grid">
