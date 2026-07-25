@@ -13,7 +13,7 @@
     {% if session.get('child_id') %}
       <span class="welcome">Merhaba, {{ session.get('child_name') }}</span>
       <a href="{{ url_for('choose_avatar') }}">Profil</a>
-      <form method="post" action="{{ url_for('logout') }}"><button>Çıkış</button></form>
+      <form method="post" action="{{ url_for('logout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button>Çıkış</button></form>
     {% endif %}
   </nav>
 </header>

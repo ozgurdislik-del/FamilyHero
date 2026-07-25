@@ -9,7 +9,20 @@ SMTP_PORT=587
 SMTP_USERNAME=<gmail adresiniz>
 SMTP_PASSWORD=<Google uygulama şifreniz>
 SMTP_FROM=<gmail adresiniz>
-FAMILYHERO_SECRET_KEY=<uzun rastgele bir anahtar>
+
+2.1. GÜVENLİK (ZORUNLU) - Bu değişkenler tanımlanmazsa uygulama her
+yeniden başlatmada geçici/rastgele değerler üretir; oturumlar ve şifre
+sıfırlama linkleri geçersiz kalır, admin/çocuk şifreleri her seferinde
+değişir. Production'da MUTLAKA sabit ve gizli değerler tanımlayın:
+FAMILYHERO_SECRET_KEY=<uzun, rastgele, kimseyle paylaşılmayan bir anahtar>
+FAMILYHERO_ADMIN_PASSWORD=<admin hesabı için güçlü bir şifre>
+FAMILYHERO_CHILD_UZAY_PASSWORD=<Uzay hesabı için şifre>
+FAMILYHERO_CHILD_TOPRAK_PASSWORD=<Toprak hesabı için şifre>
+
+Bu değişkenler tanımlı değilse uygulama otomatik güçlü bir şifre üretir
+ve Deploy Logs'a yazar (örn. "... için geçici şifre üretildi: ..."). İlk
+kurulumda logdan bu şifreyi alıp hemen admin panelinden/env değişkeninden
+kalıcı bir şifreyle değiştirin.
 
 3. Dosyaları mevcut proje klasörünün üzerine kopyalayın, ardından:
 git add .

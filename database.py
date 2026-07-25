@@ -1,7 +1,30 @@
 import os
+import secrets
+import logging
 from datetime import datetime
 from pathlib import Path
 from werkzeug.security import generate_password_hash
+
+logger = logging.getLogger("familyhero")
+
+
+def _seed_password(env_var, fallback_label):
+    """
+    İlk kurulumda kullanılacak şifreyi belirler. Kaynak kodda sabit,
+    tahmin edilebilir bir şifre tutmak yerine önce ortam değişkenine bakar;
+    tanımlı değilse rastgele, güçlü bir şifre üretir ve logda gösterir ki
+    kurulumu yapan kişi bunu not edip ilk girişte değiştirebilsin.
+    """
+    value = os.environ.get(env_var, "").strip()
+    if value:
+        return value
+    generated = secrets.token_urlsafe(9)
+    logger.warning(
+        "%s tanımlı değil; %s için geçici şifre üretildi: %s "
+        "(İlk girişte mutlaka değiştirin ve ortam değişkenini kalıcı olarak ayarlayın.)",
+        env_var, fallback_label, generated,
+    )
+    return generated
 
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "familyhero.db"
@@ -539,11 +562,13 @@ def init_db():
         conn.execute('ALTER TABLE completions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP')
         conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS children_email_unique ON children (LOWER(email)) WHERE email IS NOT NULL')
         import_bundled_sqlite_if_empty(conn)
+        admin_password_hash = None
         if not conn.execute("SELECT 1 FROM admins WHERE username='admin'").fetchone():
-            conn.execute('INSERT INTO admins(username,password_hash) VALUES(?,?)', ('admin', generate_password_hash('FamilyHero2026!')))
+            admin_password_hash = generate_password_hash(_seed_password("FAMILYHERO_ADMIN_PASSWORD", "admin kullanıcısı"))
+            conn.execute('INSERT INTO admins(username,password_hash) VALUES(?,?)', ('admin', admin_password_hash))
         # Sprint 2 bridge records. Legacy login continues to work while new identity tables are adopted route by route.
         conn.execute("INSERT INTO users(username,display_name,password_hash,user_type) VALUES(?,?,?,?) ON CONFLICT(username) DO NOTHING",
-                     ('admin','FamilyHero Yöneticisi',generate_password_hash('FamilyHero2026!'),'platform_admin'))
+                     ('admin','FamilyHero Yöneticisi',admin_password_hash or generate_password_hash(_seed_password("FAMILYHERO_ADMIN_PASSWORD", "admin kullanıcısı")),'platform_admin'))
         conn.execute("INSERT INTO families(name,slug) VALUES(?,?) ON CONFLICT(slug) DO NOTHING", ('FamilyHero Ailesi','default-family'))
         for role_key, role_name, scope, system_role in [
             ('platform_admin','Platform Yöneticisi','platform',1),
@@ -565,9 +590,11 @@ def init_db():
                          (permission_key,description))
         for key, child in SEED_DATA.items():
             sync_seed_child(conn, key, child)
-        for key, pw in {'uzay': 'Uzay123!', 'toprak': 'Toprak123!'}.items():
+        for key in SEED_DATA:
             row = conn.execute('SELECT password_hash FROM children WHERE child_key=?', (key,)).fetchone()
             if row and not row['password_hash']:
+                env_var = f"FAMILYHERO_CHILD_{key.upper()}_PASSWORD"
+                pw = _seed_password(env_var, f"'{key}' çocuk hesabı")
                 conn.execute('UPDATE children SET password_hash=? WHERE child_key=?', (generate_password_hash(pw), key))
         for child in conn.execute('SELECT id FROM children ORDER BY id').fetchall():
             if not conn.execute('SELECT 1 FROM goals WHERE child_id=? LIMIT 1', (child['id'],)).fetchone():

@@ -13,7 +13,7 @@
     <a class="{% if request.endpoint=='child_profile' %}active{% endif %}" href="{{ url_for('child_profile') }}"><i>👤</i> Profilim</a>
     <a class="{% if request.endpoint=='choose_avatar' %}active{% endif %}" href="{{ url_for('choose_avatar') }}"><i>☺</i> Avatarım</a>
   </nav>
-  <form class="child-logout" method="post" action="{{ url_for('logout') }}"><button>Çıkış yap</button></form>
+  <form class="child-logout" method="post" action="{{ url_for('logout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button>Çıkış yap</button></form>
 </aside>
 <section class="child-workspace"><header class="child-topbar"><button class="child-menu-toggle" onclick="document.getElementById('childSidebar').classList.toggle('open')" aria-label="Menüyü aç">☰</button><div class="child-topbar-title"><small>FamilyHero</small><strong>{% block page_name %}Kahraman Paneli{% endblock %}</strong></div><div class="child-topbar-actions"><details class="language-switcher"><summary aria-label="Dil seçimi"><span>🌐</span><b>TR</b><i>⌄</i></summary><div class="language-menu"><button type="button" class="active">🇹🇷 Türkçe <span>✓</span></button><button type="button" disabled title="İngilizce desteği yakında">🇬🇧 English <small>Yakında</small></button></div></details><div class="topbar-user"><span>{{ avatars.get(child.avatar_key,'🙂') }}</span><b>{{ child.name }}</b></div></div></header>
 <main class="child-content">{% for category,message in get_flashed_messages(with_categories=true) %}<div class="flash {{ category }}">{{ message }}</div>{% endfor %}{% block content %}{% endblock %}</main></section>

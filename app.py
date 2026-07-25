@@ -4,6 +4,7 @@ from functools import wraps
 import os
 import re
 import json
+import secrets
 from html import escape
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -11,10 +12,49 @@ from zoneinfo import ZoneInfo
 from flask import Flask, abort, flash, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
+from flask_wtf import CSRFProtect
+from flask_wtf.csrf import generate_csrf
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from database import AVATARS, GOAL_SEEDS, SEED_DATA, copy_template, get_db, init_db
 
 app = Flask(__name__)
-app.config["SECRET_KEY"] = os.environ.get("FAMILYHERO_SECRET_KEY", "familyhero-local-key")
+
+_secret_key = os.environ.get("FAMILYHERO_SECRET_KEY", "").strip()
+if not _secret_key:
+    # Sabit/öngörülebilir bir anahtarla çalışmak session imzalarını ve şifre
+    # sıfırlama token'larını sahtelenebilir hale getirir. Prod ortamında
+    # FAMILYHERO_SECRET_KEY env değişkeni MUTLAKA ayarlanmalı; burada sadece
+    # yerel geliştirmede uygulamanın çalışabilmesi için rastgele, tahmin
+    # edilemez bir anahtar üretilir (her yeniden başlatmada değişir, bu da
+    # kalıcı oturum/token beklenen prod kullanımı için env değişkenini
+    # zorunlu kılar).
+    _secret_key = secrets.token_hex(32)
+    app.logger.warning(
+        "FAMILYHERO_SECRET_KEY tanımlı değil! Geçici, rastgele bir anahtar "
+        "üretildi. Production ortamında bu değişkeni MUTLAKA sabit ve "
+        "gizli bir değerle tanımlayın, aksi halde her yeniden başlatmada "
+        "tüm oturumlar ve şifre sıfırlama linkleri geçersiz olur."
+    )
+
+app.config["SECRET_KEY"] = _secret_key
+
+# Session çerezini sertleştir: JS erişimini engelle, sadece HTTPS üzerinden
+# gönder (Railway HTTPS sağlıyor) ve cross-site isteklerle taşınmasını
+# engelle (CSRF savunmasını güçlendiren ek katman).
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=os.environ.get("FAMILYHERO_INSECURE_COOKIES", "").lower() != "true",
+)
+
+# CSRF koruması: tüm state değiştiren POST isteklerinde token zorunlu.
+csrf = CSRFProtect(app)
+app.jinja_env.globals["csrf_token"] = generate_csrf
+
+# Giriş uç noktalarında brute-force / şifre tahmin denemelerini sınırla.
+limiter = Limiter(key_func=get_remote_address, app=app, default_limits=[])
+
 init_db()
 app.logger.info("FamilyHero PostgreSQL veritabanı hazır; DATABASE_URL kullanılıyor.")
 
@@ -200,6 +240,7 @@ def home():
 
 
 @app.route("/", methods=["GET", "POST"])
+@limiter.limit("10 per minute", methods=["POST"])
 def login():
     if session.get("child_id"):
         return redirect(url_for("dashboard"))
@@ -458,6 +499,7 @@ def choose_avatar():
 
 
 @app.route("/forgot-password", methods=["GET", "POST"])
+@limiter.limit("5 per minute", methods=["POST"])
 def forgot_password():
     if request.method == "POST":
         email = request.form.get("email", "").strip().lower()
@@ -490,8 +532,8 @@ def reset_password(token):
     if request.method == "POST":
         password = request.form.get("password", "")
         confirm = request.form.get("confirm_password", "")
-        if len(password) < 6 or password != confirm:
-            flash("Şifreler aynı olmalı ve en az 6 karakter olmalı.", "error")
+        if len(password) < 8 or password != confirm:
+            flash("Şifreler aynı olmalı ve en az 8 karakter olmalı.", "error")
             return render_template("reset_password.html", token=token)
         with get_db() as conn:
             child = conn.execute("SELECT id,email FROM children WHERE id=?", (payload["child_id"],)).fetchone()
@@ -504,6 +546,7 @@ def reset_password(token):
 
 
 @app.route("/admin/login", methods=["GET", "POST"])
+@limiter.limit("10 per minute", methods=["POST"])
 def admin_login():
     if session.get("admin_id"):
         return redirect(url_for("admin_panel"))
@@ -611,8 +654,8 @@ def admin_add_child():
     template_key = request.form.get("template_key", "")
     avatar_key = request.form.get("avatar_key", "scientist")
 
-    if not name or not child_key or not email or len(password) < 4:
-        flash("Ad, e-posta, kullanıcı anahtarı ve en az 4 karakterli şifre gereklidir.", "error")
+    if not name or not child_key or not email or len(password) < 8:
+        flash("Ad, e-posta, kullanıcı anahtarı ve en az 8 karakterli şifre gereklidir.", "error")
         return redirect(url_for("admin_panel"))
     if not re.fullmatch(r"[a-z0-9_-]+", child_key):
         flash("Kullanıcı anahtarı yalnızca küçük harf, rakam, - ve _ içerebilir.", "error")

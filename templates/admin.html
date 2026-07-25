@@ -31,7 +31,7 @@
 
   <article class="card add-child-card" id="add-child">
     <div class="card-header"><div><h2>Yeni çocuk ekle</h2><p>Yeni bir aile üyesi profili oluşturun.</p></div></div>
-    <form method="post" action="{{ url_for('admin_add_child') }}" class="modern-form">
+    <form method="post" action="{{ url_for('admin_add_child') }}" class="modern-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="field-row"><label>Çocuğun adı<input name="name" placeholder="Örn. Deniz" required></label><label>Kullanıcı anahtarı<input name="child_key" placeholder="örn. deniz" required><small>Küçük harf ve boşluksuz.</small></label></div>
       <div class="field-row"><label>E-posta adresi<input name="email" type="email" placeholder="cocuk@ornek.com" required></label><label>İlk şifre<input name="password" type="password" minlength="4" placeholder="En az 4 karakter" required></label></div><div class="field-row"><label>Unvan<input name="title" value="Süper Kaşif"></label><label>Doğum tarihi<input name="birth_date" type="date"></label></div>
       <div class="field-row"><label>Okulu<input name="school" placeholder="Örn. TED Atakent"></label><label>Tuttuğu takım<input name="favorite_team" placeholder="Örn. Beşiktaş"></label></div>
