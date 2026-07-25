@@ -970,3 +970,66 @@ svg {
   .poll-card-actions{display:grid;grid-template-columns:1fr 1fr;width:100%}
   .poll-card-actions form,.poll-card-actions a,.poll-card-actions button{width:100%}
 }
+
+
+/* FamilyHero 4.9.1 — Mobile UX refresh */
+.child-topbar-actions{display:flex;align-items:center;gap:10px}
+.language-switcher{position:relative}
+.language-switcher>summary{list-style:none;display:flex;align-items:center;gap:6px;height:36px;padding:0 10px;border:1px solid var(--child-line);border-radius:10px;background:#fff;color:#344054;cursor:pointer;font-size:12px;font-weight:800;user-select:none}
+.language-switcher>summary::-webkit-details-marker{display:none}
+.language-switcher>summary i{font-style:normal;color:#98a2b3;font-size:10px}
+.language-switcher[open]>summary{border-color:#a5b4fc;box-shadow:0 0 0 3px rgba(99,102,241,.10)}
+.language-menu{position:absolute;right:0;top:43px;z-index:60;width:176px;padding:7px;border:1px solid #e4e7ec;border-radius:12px;background:#fff;box-shadow:0 18px 42px rgba(16,24,40,.16)}
+.language-menu button{width:100%;display:flex;align-items:center;justify-content:space-between;gap:9px;padding:9px 10px;border:0;border-radius:9px;background:transparent;color:#344054;text-align:left;font-size:12px;cursor:pointer}
+.language-menu button.active{background:#f2f4ff;color:#4338ca;font-weight:800}
+.language-menu button:disabled{color:#98a2b3;cursor:not-allowed}
+.language-menu button small{font-size:9px;color:#98a2b3}
+.mini-back-button{display:inline-flex;align-items:center;gap:7px;margin:0 0 13px;padding:7px 10px;border:1px solid #e4e7ec;border-radius:9px;background:#fff;color:#475467;font-size:12px;font-weight:800;box-shadow:0 3px 10px rgba(16,24,40,.035)}
+.mini-back-button:hover{border-color:#c7d7fe;background:#f8faff;color:#4338ca}
+
+/* The fact band reserves its own area and never covers the CTA. */
+.hero-dashboard-banner{padding-bottom:68px}
+.daily-fact-ticker{height:42px}
+.daily-fact-track{padding-right:40px}
+
+/* Tablet/mobile: keep the adventure first; side cards follow the main content. */
+@media(max-width:1050px){
+  .dashboard-layout{grid-template-columns:1fr}
+  .dashboard-primary{order:1}
+  .dashboard-side-stack{order:2;position:static}
+  .family-scoreboard-aside{position:static;max-height:none}
+}
+
+@media(max-width:620px){
+  .child-topbar{gap:9px}
+  .child-topbar-title{min-width:0;flex:1}
+  .child-topbar-actions{gap:7px}
+  .language-switcher>summary{height:32px;padding:0 8px;font-size:11px}
+  .language-switcher>summary span{display:none}
+  .language-menu{top:38px;width:166px}
+  .topbar-user{gap:0}
+  .topbar-user span{width:32px;height:32px}
+  .hero-dashboard-banner{min-height:255px;padding:24px 20px 72px;align-items:flex-start}
+  .hero-dashboard-banner>div:first-child{max-width:78%}
+  .hero-dashboard-banner h1{font-size:27px;line-height:1.1;margin:7px 0 7px}
+  .hero-dashboard-banner p{font-size:13px;line-height:1.4;margin-bottom:17px}
+  .hero-cta{padding:11px 13px;font-size:12px;gap:9px;max-width:100%}
+  .hero-character{right:5px;bottom:50px;font-size:62px;opacity:.72}
+  .daily-fact-ticker{height:46px}
+  .daily-fact-label{padding:0 8px;max-width:105px;font-size:7px;line-height:1.15;text-align:center;white-space:normal}
+  .daily-fact-track{gap:55px;animation-duration:22s}
+  .daily-fact-track span{font-size:10px}
+  .dashboard-side-stack{gap:12px}
+  .family-poll-card,.family-scoreboard-aside{padding:15px}
+  .mini-back-button{margin-bottom:11px}
+}
+
+@media(max-width:390px){
+  .child-topbar{padding-left:10px;padding-right:10px}
+  .child-topbar strong{font-size:11px}
+  .language-switcher>summary{padding:0 7px}
+  .hero-dashboard-banner>div:first-child{max-width:82%}
+  .hero-dashboard-banner h1{font-size:24px}
+  .hero-character{font-size:54px;right:1px}
+  .child-metric-grid{grid-template-columns:1fr 1fr}
+}

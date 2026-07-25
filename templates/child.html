@@ -2,6 +2,7 @@
 {% block title %}Görevlerim | FamilyHero{% endblock %}
 {% block page_name %}Görevlerim{% endblock %}
 {% block content %}
+<a class="mini-back-button" href="{{ url_for('dashboard') }}" aria-label="Kahraman paneline geri dön">← <span>Geri</span></a>
 {% set category_meta = {
   'Öğrenme Görevleri': ('📘','learning','Öğrenme'),
   'Akıl Oyunları': ('🧠','mind','Akıl Oyunları'),

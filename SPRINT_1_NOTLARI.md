@@ -1,20 +1,9 @@
-# FamilyHero Sprint 1
+# FamilyHero 4.9.1 – Mobile UX Refresh
 
-Bu paket, yüklenen `familyhero(2).zip` sürümü temel alınarak hazırlanmıştır.
-
-## Tamamlananlar
-
-- Masaüstünde daraltılıp genişletilebilen admin menüsü
-- Menü durumunun tarayıcıda hatırlanması
-- Mobil admin menüsünün açılıp kapanması
-- Aile oylamalarında düzenleme, kopyalama, kapatma/yayınlama ve silme işlemleri
-- Oy veren çocukların listelenmesi; oy tercihlerinin gizli tutulması
-- Oylama emojilerinin isteğe bağlı olması
-- Oy kullanılmış ankette seçeneklerin korunması
-- Oylama ekranında mobil görünüm ve işlem düğmesi iyileştirmeleri
-- Günün Bilgisi şeridinin mevcut yapıda korunması
-
-## Kontrol
-
-- `app.py` ve `database.py` Python sözdizimi kontrolünden geçti.
-- Bu çalışma ortamında Flask paketi kurulu olmadığı için uygulama sunucusu üzerinden uçtan uca test çalıştırılamadı.
+Tamamlananlar:
+- Mobilde Günün Macerası en üstte tutuldu.
+- Sağ sütun (anket ve aile sıralaması) mobilde ana içeriğin altına alındı.
+- Günün Bilgisi bandının butonla çakışması giderildi.
+- Üst menüye TR dil seçici eklendi; İngilizce seçeneği altyapı tamamlanana kadar “Yakında” durumunda.
+- Görevler ekranına mini Geri butonu eklendi.
+- Küçük ekranlarda kart aralıkları, üst bar ve kahraman alanı iyileştirildi.
