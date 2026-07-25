@@ -1,5 +1,4 @@
 import os
-import secrets
 import logging
 from datetime import datetime
 from pathlib import Path
@@ -9,22 +8,16 @@ logger = logging.getLogger("familyhero")
 
 
 def _seed_password(env_var, fallback_label):
-    """
-    İlk kurulumda kullanılacak şifreyi belirler. Kaynak kodda sabit,
-    tahmin edilebilir bir şifre tutmak yerine önce ortam değişkenine bakar;
-    tanımlı değilse rastgele, güçlü bir şifre üretir ve logda gösterir ki
-    kurulumu yapan kişi bunu not edip ilk girişte değiştirebilsin.
-    """
+    """İlk hesap oluşturulurken gerekli şifreyi yalnızca ortamdan alır."""
     value = os.environ.get(env_var, "").strip()
     if value:
+        if len(value) < 10:
+            raise RuntimeError(f"{env_var} en az 10 karakter olmalıdır.")
         return value
-    generated = secrets.token_urlsafe(9)
-    logger.warning(
-        "%s tanımlı değil; %s için geçici şifre üretildi: %s "
-        "(İlk girişte mutlaka değiştirin ve ortam değişkenini kalıcı olarak ayarlayın.)",
-        env_var, fallback_label, generated,
+    raise RuntimeError(
+        f"{fallback_label} oluşturulamadı: {env_var} tanımlı değil. "
+        "Şifreler kaynak kodda veya deploy loglarında üretilemez."
     )
-    return generated
 
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "familyhero.db"
@@ -268,7 +261,7 @@ def sync_seed_child(conn, child_key, child):
     row = conn.execute('SELECT * FROM children WHERE child_key=?', (child_key,)).fetchone()
     if not row:
         cur = conn.execute('INSERT INTO children(child_key,name,title,password_hash,avatar_key) VALUES(?,?,?,?,?)',
-                           (child_key, child['name'], child['title'], generate_password_hash(f"{child['name']}123!"), child['avatar']))
+                           (child_key, child['name'], child['title'], generate_password_hash(_seed_password(f"FAMILYHERO_CHILD_{child_key.upper()}_PASSWORD", f"'{child_key}' çocuk hesabı")), child['avatar']))
         copy_template(conn, cur.lastrowid, child_key)
         return
     child_id = row['id']
@@ -476,7 +469,8 @@ def init_db():
             user_type TEXT NOT NULL DEFAULT 'member',
             active INTEGER NOT NULL DEFAULT 1,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            must_change_password INTEGER NOT NULL DEFAULT 0
         );
         CREATE TABLE IF NOT EXISTS families (
             id BIGSERIAL PRIMARY KEY,
@@ -560,42 +554,140 @@ def init_db():
         conn.execute('ALTER TABLE children ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP')
         conn.execute('ALTER TABLE children ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP')
         conn.execute('ALTER TABLE completions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP')
+        conn.execute('ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password INTEGER NOT NULL DEFAULT 0')
         conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS children_email_unique ON children (LOWER(email)) WHERE email IS NOT NULL')
         import_bundled_sqlite_if_empty(conn)
-        admin_password_hash = None
-        if not conn.execute("SELECT 1 FROM admins WHERE username='admin'").fetchone():
-            admin_password_hash = generate_password_hash(_seed_password("FAMILYHERO_ADMIN_PASSWORD", "admin kullanıcısı"))
-            conn.execute('INSERT INTO admins(username,password_hash) VALUES(?,?)', ('admin', admin_password_hash))
-        # Sprint 2 bridge records. Legacy login continues to work while new identity tables are adopted route by route.
-        conn.execute("INSERT INTO users(username,display_name,password_hash,user_type) VALUES(?,?,?,?) ON CONFLICT(username) DO NOTHING",
-                     ('admin','FamilyHero Yöneticisi',admin_password_hash or generate_password_hash(_seed_password("FAMILYHERO_ADMIN_PASSWORD", "admin kullanıcısı")),'platform_admin'))
-        conn.execute("INSERT INTO families(name,slug) VALUES(?,?) ON CONFLICT(slug) DO NOTHING", ('FamilyHero Ailesi','default-family'))
-        for role_key, role_name, scope, system_role in [
+        admin_row = conn.execute("SELECT id,password_hash FROM admins WHERE username='admin'").fetchone()
+        if not admin_row:
+            admin_hash = generate_password_hash(
+                _seed_password("FAMILYHERO_ADMIN_PASSWORD", "admin kullanıcısı")
+            )
+            cur = conn.execute(
+                'INSERT INTO admins(username,password_hash) VALUES(?,?)',
+                ('admin', admin_hash),
+            )
+            admin_row = {'id': cur.lastrowid, 'password_hash': admin_hash}
+
+        family = conn.execute(
+            "INSERT INTO families(name,slug) VALUES(?,?) ON CONFLICT(slug) DO UPDATE SET name=excluded.name RETURNING id",
+            ('FamilyHero Ailesi','default-family'),
+        ).fetchone()
+        family_id = family['id']
+
+        roles = [
             ('platform_admin','Platform Yöneticisi','platform',1),
             ('family_owner','Aile Sahibi','family',1),
+            ('family_admin','Aile Yöneticisi','family',1),
             ('parent','Ebeveyn','family',1),
             ('child','Çocuk','family',1),
-        ]:
-            conn.execute("INSERT INTO roles(role_key,name,scope,system_role) VALUES(?,?,?,?) ON CONFLICT(role_key) DO NOTHING",
-                         (role_key,role_name,scope,system_role))
-        for permission_key, description in [
-            ('family.view','Aile alanını görüntüleme'),('family.update','Aile ayarlarını değiştirme'),
-            ('member.manage','Aile üyelerini yönetme'),('task.create','Görev oluşturma'),
-            ('task.update','Görev düzenleme'),('task.complete','Görev tamamlama'),
-            ('poll.create','Oylama oluşturma'),('poll.vote','Oylamaya katılma'),
-            ('reward.manage','Ödülleri yönetme'),('feedback.create','Geri bildirim oluşturma'),
-            ('feedback.manage','Geri bildirimleri yönetme'),('audit.view','Denetim kayıtlarını görüntüleme')
-        ]:
-            conn.execute("INSERT INTO permissions(permission_key,description) VALUES(?,?) ON CONFLICT(permission_key) DO NOTHING",
-                         (permission_key,description))
+        ]
+        for role_key, role_name, scope, system_role in roles:
+            conn.execute(
+                "INSERT INTO roles(role_key,name,scope,system_role) VALUES(?,?,?,?) ON CONFLICT(role_key) DO UPDATE SET name=excluded.name,scope=excluded.scope",
+                (role_key,role_name,scope,system_role),
+            )
+
+        permission_rows = [
+            ('family.view','Aile alanını görüntüleme'),
+            ('family.update','Aile ayarlarını değiştirme'),
+            ('member.view','Aile üyelerini görüntüleme'),
+            ('member.manage','Aile üyelerini yönetme'),
+            ('task.view','Görevleri görüntüleme'),
+            ('task.create','Görev oluşturma'),
+            ('task.update','Görev düzenleme'),
+            ('task.delete','Görev silme'),
+            ('task.complete','Görev tamamlama'),
+            ('reward.view','Ödülleri görüntüleme'),
+            ('reward.manage','Ödülleri yönetme'),
+            ('goal.manage','Hedef ve rozetleri yönetme'),
+            ('poll.create','Oylama oluşturma'),
+            ('poll.manage','Oylamaları yönetme'),
+            ('poll.vote','Oylamaya katılma'),
+            ('report.view','Raporları görüntüleme'),
+            ('statistics.view','İstatistikleri görüntüleme'),
+            ('feedback.create','Geri bildirim oluşturma'),
+            ('feedback.manage','Geri bildirimleri yönetme'),
+            ('audit.view','Denetim kayıtlarını görüntüleme'),
+        ]
+        for permission_key, description in permission_rows:
+            conn.execute(
+                "INSERT INTO permissions(permission_key,description) VALUES(?,?) ON CONFLICT(permission_key) DO UPDATE SET description=excluded.description",
+                (permission_key,description),
+            )
+
+        admin_user = conn.execute(
+            """INSERT INTO users(username,display_name,password_hash,user_type)
+               VALUES(?,?,?,?)
+               ON CONFLICT(username) DO UPDATE SET
+                   display_name=excluded.display_name,
+                   password_hash=COALESCE(users.password_hash,excluded.password_hash),
+                   user_type=excluded.user_type
+               RETURNING id""",
+            ('admin','FamilyHero Yöneticisi',admin_row['password_hash'],'platform_admin'),
+        ).fetchone()
+        admin_membership = conn.execute(
+            """INSERT INTO family_memberships(family_id,user_id,member_kind,status)
+               VALUES(?,?,?,?)
+               ON CONFLICT(family_id,user_id) DO UPDATE SET status='active'
+               RETURNING id""",
+            (family_id,admin_user['id'],'adult','active'),
+        ).fetchone()
+
+        for role_key in ('platform_admin','family_owner'):
+            conn.execute(
+                """INSERT INTO membership_roles(membership_id,role_id)
+                   SELECT ?,id FROM roles WHERE role_key=?
+                   ON CONFLICT DO NOTHING""",
+                (admin_membership['id'],role_key),
+            )
+
+        all_permissions = [p[0] for p in permission_rows]
+        child_permissions = ['family.view','task.view','task.complete','reward.view','poll.vote','feedback.create']
+        role_permission_map = {
+            'platform_admin': all_permissions,
+            'family_owner': all_permissions,
+            'family_admin': [p for p in all_permissions if p != 'audit.view'],
+            'parent': [p for p in all_permissions if p not in {'audit.view','family.update'}],
+            'child': child_permissions,
+        }
+        for role_key, permission_keys in role_permission_map.items():
+            for permission_key in permission_keys:
+                conn.execute(
+                    """INSERT INTO role_permissions(role_id,permission_id)
+                       SELECT r.id,p.id FROM roles r,permissions p
+                        WHERE r.role_key=? AND p.permission_key=?
+                       ON CONFLICT DO NOTHING""",
+                    (role_key,permission_key),
+                )
+
         for key, child in SEED_DATA.items():
             sync_seed_child(conn, key, child)
-        for key in SEED_DATA:
-            row = conn.execute('SELECT password_hash FROM children WHERE child_key=?', (key,)).fetchone()
-            if row and not row['password_hash']:
-                env_var = f"FAMILYHERO_CHILD_{key.upper()}_PASSWORD"
-                pw = _seed_password(env_var, f"'{key}' çocuk hesabı")
-                conn.execute('UPDATE children SET password_hash=? WHERE child_key=?', (generate_password_hash(pw), key))
+
+        for child_row in conn.execute('SELECT id,child_key,name,password_hash,email FROM children ORDER BY id').fetchall():
+            user = conn.execute(
+                """INSERT INTO users(email,username,display_name,password_hash,user_type)
+                   VALUES(?,?,?,?,?)
+                   ON CONFLICT(username) DO UPDATE SET
+                       display_name=excluded.display_name,
+                       email=COALESCE(excluded.email,users.email),
+                       password_hash=COALESCE(users.password_hash,excluded.password_hash),
+                       user_type='member'
+                   RETURNING id""",
+                (child_row.get('email'),child_row['child_key'],child_row['name'],child_row['password_hash'],'member'),
+            ).fetchone()
+            membership = conn.execute(
+                """INSERT INTO family_memberships(family_id,user_id,member_kind,child_id,status)
+                   VALUES(?,?,?,?,?)
+                   ON CONFLICT(family_id,user_id) DO UPDATE SET child_id=excluded.child_id,status='active'
+                   RETURNING id""",
+                (family_id,user['id'],'child',child_row['id'],'active'),
+            ).fetchone()
+            conn.execute(
+                """INSERT INTO membership_roles(membership_id,role_id)
+                   SELECT ?,id FROM roles WHERE role_key='child'
+                   ON CONFLICT DO NOTHING""",
+                (membership['id'],),
+            )
         for child in conn.execute('SELECT id FROM children ORDER BY id').fetchall():
             if not conn.execute('SELECT 1 FROM goals WHERE child_id=? LIMIT 1', (child['id'],)).fetchone():
                 for order, (title, criteria, target, points) in enumerate(GOAL_SEEDS):

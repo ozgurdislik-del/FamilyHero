@@ -4,7 +4,6 @@ from functools import wraps
 import os
 import re
 import json
-import secrets
 from html import escape
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -17,35 +16,14 @@ from flask_wtf.csrf import generate_csrf
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from database import AVATARS, GOAL_SEEDS, SEED_DATA, copy_template, get_db, init_db
+from config import Config
+from services.authz import establish_identity_session, permission_required
+from services.audit import audit_event
 
 app = Flask(__name__)
-
-_secret_key = os.environ.get("FAMILYHERO_SECRET_KEY", "").strip()
-if not _secret_key:
-    # Sabit/öngörülebilir bir anahtarla çalışmak session imzalarını ve şifre
-    # sıfırlama token'larını sahtelenebilir hale getirir. Prod ortamında
-    # FAMILYHERO_SECRET_KEY env değişkeni MUTLAKA ayarlanmalı; burada sadece
-    # yerel geliştirmede uygulamanın çalışabilmesi için rastgele, tahmin
-    # edilemez bir anahtar üretilir (her yeniden başlatmada değişir, bu da
-    # kalıcı oturum/token beklenen prod kullanımı için env değişkenini
-    # zorunlu kılar).
-    _secret_key = secrets.token_hex(32)
-    app.logger.warning(
-        "FAMILYHERO_SECRET_KEY tanımlı değil! Geçici, rastgele bir anahtar "
-        "üretildi. Production ortamında bu değişkeni MUTLAKA sabit ve "
-        "gizli bir değerle tanımlayın, aksi halde her yeniden başlatmada "
-        "tüm oturumlar ve şifre sıfırlama linkleri geçersiz olur."
-    )
-
-app.config["SECRET_KEY"] = _secret_key
-
-# Session çerezini sertleştir: JS erişimini engelle, sadece HTTPS üzerinden
-# gönder (Railway HTTPS sağlıyor) ve cross-site isteklerle taşınmasını
-# engelle (CSRF savunmasını güçlendiren ek katman).
-app.config.update(
-    SESSION_COOKIE_HTTPONLY=True,
-    SESSION_COOKIE_SAMESITE="Lax",
-    SESSION_COOKIE_SECURE=os.environ.get("FAMILYHERO_INSECURE_COOKIES", "").lower() != "true",
+app.config.from_object(Config)
+app.permanent_session_lifetime = timedelta(
+    seconds=app.config["PERMANENT_SESSION_LIFETIME_SECONDS"]
 )
 
 # CSRF koruması: tüm state değiştiren POST isteklerinde token zorunlu.
@@ -252,10 +230,17 @@ def login():
         with get_db() as conn:
             child = conn.execute("SELECT * FROM children WHERE child_key=?", (key,)).fetchone()
         if not child or not check_password_hash(child["password_hash"], password):
+            audit_event("auth.login.failed", "child", key)
             flash("İsim veya şifre hatalı.", "error")
             return render_template("login.html", children=children, avatars=AVATARS), 401
         session.clear()
+        session.permanent = True
         session.update(child_id=child["id"], child_name=child["name"])
+        if not establish_identity_session(child["child_key"], child_id=child["id"]):
+            app.logger.error("Çocuk kimlik köprüsü bulunamadı: %s", child["child_key"])
+            session.clear()
+            abort(500)
+        audit_event("auth.login.success", "child", child["id"])
         return redirect(url_for("dashboard"))
     return render_template("login.html", children=children, avatars=AVATARS)
 
@@ -367,7 +352,7 @@ def dashboard():
 
 
 @app.post("/polls/<int:poll_id>/vote")
-@child_login_required
+@permission_required("poll.vote", login_endpoint="login")
 def child_poll_vote(poll_id):
     child = current_child()
     now = istanbul_now()
@@ -439,7 +424,7 @@ def child_rewards():
 
 
 @app.post("/task/<int:task_id>/save")
-@child_login_required
+@permission_required("task.complete", login_endpoint="login")
 def save_task(task_id):
     child = current_child()
     selected, editable = allowed_completion_date(request.form.get("completion_date"))
@@ -460,7 +445,7 @@ def save_task(task_id):
 
 
 @app.post("/task/<int:task_id>/undo")
-@child_login_required
+@permission_required("task.complete", login_endpoint="login")
 def undo_task(task_id):
     child = current_child()
     selected, editable = allowed_completion_date(request.form.get("completion_date"))
@@ -532,14 +517,24 @@ def reset_password(token):
     if request.method == "POST":
         password = request.form.get("password", "")
         confirm = request.form.get("confirm_password", "")
-        if len(password) < 8 or password != confirm:
-            flash("Şifreler aynı olmalı ve en az 8 karakter olmalı.", "error")
+        if len(password) < 10 or password != confirm:
+            flash("Şifreler aynı olmalı ve en az 10 karakter olmalı.", "error")
             return render_template("reset_password.html", token=token)
         with get_db() as conn:
             child = conn.execute("SELECT id,email FROM children WHERE id=?", (payload["child_id"],)).fetchone()
             if not child or (child["email"] or "").lower() != payload["email"].lower():
                 abort(400)
-            conn.execute("UPDATE children SET password_hash=?,updated_at=CURRENT_TIMESTAMP WHERE id=?", (generate_password_hash(password), child["id"]))
+            new_hash = generate_password_hash(password)
+            conn.execute(
+                "UPDATE children SET password_hash=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                (new_hash, child["id"]),
+            )
+            conn.execute(
+                """UPDATE users SET password_hash=?,must_change_password=0,updated_at=CURRENT_TIMESTAMP
+                   WHERE username=(SELECT child_key FROM children WHERE id=?)""",
+                (new_hash, child["id"]),
+            )
+        audit_event("auth.password.reset", "child", payload["child_id"])
         flash("Şifreniz yenilendi. Şimdi giriş yapabilirsiniz.", "success")
         return redirect(url_for("login"))
     return render_template("reset_password.html", token=token)
@@ -556,10 +551,17 @@ def admin_login():
         with get_db() as conn:
             admin = conn.execute("SELECT * FROM admins WHERE username=?", (username,)).fetchone()
         if not admin or not check_password_hash(admin["password_hash"], password):
+            audit_event("auth.login.failed", "admin", username)
             flash("Admin kullanıcı adı veya şifre hatalı.", "error")
             return render_template("admin_login.html"), 401
         session.clear()
+        session.permanent = True
         session.update(admin_id=admin["id"], admin_name=admin["username"])
+        if not establish_identity_session(admin["username"], admin_id=admin["id"]):
+            app.logger.error("Admin kimlik köprüsü bulunamadı: %s", admin["username"])
+            session.clear()
+            abort(500)
+        audit_event("auth.login.success", "admin", admin["id"])
         return redirect(url_for("admin_panel"))
     return render_template("admin_login.html")
 
@@ -571,7 +573,7 @@ def admin_logout():
 
 
 @app.route("/admin")
-@admin_required
+@permission_required("family.view")
 def admin_panel():
     with get_db() as conn:
         children = conn.execute(
@@ -586,7 +588,7 @@ def admin_panel():
 
 
 @app.route("/admin/children/<int:child_id>", methods=["GET", "POST"])
-@admin_required
+@permission_required("member.manage")
 def admin_child_profile(child_id):
     with get_db() as conn:
         child = conn.execute("SELECT * FROM children WHERE id=?", (child_id,)).fetchone()
@@ -603,9 +605,20 @@ def admin_child_profile(child_id):
                 flash("Ad soyad alanı boş bırakılamaz.", "error")
             else:
                 try:
+                    before = dict(child)
                     conn.execute(
                         """UPDATE children SET name=?,email=?,birth_date=?,favorite_team=?,school=?,title=?,updated_at=CURRENT_TIMESTAMP WHERE id=?""",
                         (name, email, birth_date, favorite_team, school, title, child_id),
+                    )
+                    conn.execute(
+                        """UPDATE users SET display_name=?,email=?,updated_at=CURRENT_TIMESTAMP
+                           WHERE username=(SELECT child_key FROM children WHERE id=?)""",
+                        (name, email, child_id),
+                    )
+                    audit_event(
+                        "member.update", "child", child_id, before=before,
+                        after={"name": name, "email": email, "birth_date": birth_date,
+                               "favorite_team": favorite_team, "school": school, "title": title},
                     )
                     flash("Çocuk profil bilgileri güncellendi.", "success")
                     return redirect(url_for("admin_child_profile", child_id=child_id))
@@ -618,7 +631,7 @@ def admin_child_profile(child_id):
 
 
 @app.post("/admin/children/<int:child_id>/send-password-reset")
-@admin_required
+@permission_required("member.manage")
 def admin_send_password_reset(child_id):
     with get_db() as conn:
         child = conn.execute("SELECT id,name,email FROM children WHERE id=?", (child_id,)).fetchone()
@@ -631,6 +644,7 @@ def admin_send_password_reset(child_id):
     reset_url = url_for("reset_password", token=token, _external=True)
     try:
         if send_reset_email(child["email"], reset_url):
+            audit_event("member.password_reset.sent", "child", child_id)
             flash(f"Şifre sıfırlama bağlantısı {child['email']} adresine gönderildi.", "success")
         else:
             flash("E-posta gönderilemedi. Railway SMTP değişkenlerini kontrol edin.", "error")
@@ -641,7 +655,7 @@ def admin_send_password_reset(child_id):
 
 
 @app.post("/admin/children/add")
-@admin_required
+@permission_required("member.manage")
 def admin_add_child():
     name = request.form.get("name", "").strip()
     child_key = request.form.get("child_key", "").strip().lower()
@@ -654,8 +668,8 @@ def admin_add_child():
     template_key = request.form.get("template_key", "")
     avatar_key = request.form.get("avatar_key", "scientist")
 
-    if not name or not child_key or not email or len(password) < 8:
-        flash("Ad, e-posta, kullanıcı anahtarı ve en az 8 karakterli şifre gereklidir.", "error")
+    if not name or not child_key or not email or len(password) < 10:
+        flash("Ad, e-posta, kullanıcı anahtarı ve en az 10 karakterli şifre gereklidir.", "error")
         return redirect(url_for("admin_panel"))
     if not re.fullmatch(r"[a-z0-9_-]+", child_key):
         flash("Kullanıcı anahtarı yalnızca küçük harf, rakam, - ve _ içerebilir.", "error")
@@ -678,6 +692,23 @@ def admin_add_child():
                     (new_child_id, goal_title, criteria, target, bonus, order),
                 )
                 conn.execute("INSERT INTO goal_progress(goal_id,current_value) VALUES(?,0)", (goal_cur.lastrowid,))
+            family = conn.execute("SELECT id FROM families WHERE slug='default-family'").fetchone()
+            password_hash = conn.execute("SELECT password_hash FROM children WHERE id=?", (new_child_id,)).fetchone()[0]
+            user = conn.execute(
+                """INSERT INTO users(email,username,display_name,password_hash,user_type)
+                   VALUES(?,?,?,?,?) RETURNING id""",
+                (email, child_key, name, password_hash, "member"),
+            ).fetchone()
+            membership = conn.execute(
+                """INSERT INTO family_memberships(family_id,user_id,member_kind,child_id,status)
+                   VALUES(?,?,?,?,?) RETURNING id""",
+                (family["id"], user["id"], "child", new_child_id, "active"),
+            ).fetchone()
+            conn.execute(
+                """INSERT INTO membership_roles(membership_id,role_id)
+                   SELECT ?,id FROM roles WHERE role_key='child'""",
+                (membership["id"],),
+            )
     except Exception as exc:
         if "UNIQUE" in str(exc).upper():
             flash("Bu kullanıcı anahtarı zaten kullanılıyor.", "error")
@@ -685,12 +716,13 @@ def admin_add_child():
             flash("Çocuk eklenemedi.", "error")
         return redirect(url_for("admin_panel"))
 
+    audit_event("member.create", "child", new_child_id, after={"name": name, "child_key": child_key, "email": email})
     flash(f"{name} başarıyla eklendi.", "success")
     return redirect(url_for("admin_panel"))
 
 
 @app.route("/admin/statistics")
-@admin_required
+@permission_required("statistics.view")
 def admin_statistics():
     days = request.args.get("days", default=7, type=int)
     if days not in (7, 14, 30):
@@ -781,7 +813,7 @@ def admin_statistics():
 
 
 @app.route("/admin/report")
-@admin_required
+@permission_required("report.view")
 def admin_report():
     selected_date = request.args.get("date", date.today().isoformat())
     try:
@@ -849,7 +881,7 @@ def admin_report():
 
 
 @app.post("/admin/rewards/grant")
-@admin_required
+@permission_required("reward.manage")
 def admin_grant_reward():
     child_id = request.form.get("child_id", type=int)
     reward_id = request.form.get("reward_id", type=int)
@@ -901,7 +933,7 @@ def admin_grant_reward():
 
 
 @app.post("/admin/rewards/grant/<int:grant_id>/delete")
-@admin_required
+@permission_required("reward.manage")
 def admin_delete_grant(grant_id):
     selected_date = request.form.get("date", date.today().isoformat())
     child_id = request.form.get("child_id", type=int)
@@ -912,7 +944,7 @@ def admin_delete_grant(grant_id):
 
 
 @app.route("/admin/polls", methods=["GET", "POST"])
-@admin_required
+@permission_required("poll.manage")
 def admin_polls():
     today = istanbul_now().date().isoformat()
     edit_id = request.args.get("edit_id", type=int)
@@ -1026,7 +1058,7 @@ def admin_polls():
 
 
 @app.post("/admin/polls/<int:poll_id>/toggle")
-@admin_required
+@permission_required("poll.manage")
 def admin_poll_toggle(poll_id):
     with get_db() as conn:
         poll = conn.execute("SELECT active FROM family_polls WHERE id=?", (poll_id,)).fetchone()
@@ -1036,7 +1068,7 @@ def admin_poll_toggle(poll_id):
 
 
 @app.post("/admin/polls/<int:poll_id>/delete")
-@admin_required
+@permission_required("poll.manage")
 def admin_poll_delete(poll_id):
     with get_db() as conn:
         conn.execute("DELETE FROM family_polls WHERE id=?", (poll_id,))
@@ -1045,7 +1077,7 @@ def admin_poll_delete(poll_id):
 
 
 @app.route("/admin/config")
-@admin_required
+@permission_required("family.view")
 def admin_config():
     with get_db() as conn:
         children = conn.execute("SELECT * FROM children ORDER BY name").fetchall()
@@ -1062,7 +1094,7 @@ def admin_config():
 
 
 @app.post("/admin/tasks/add")
-@admin_required
+@permission_required("task.create")
 def admin_task_add():
     child_id=request.form.get("child_id",type=int); category=request.form.get("category","").strip()
     description=request.form.get("description","").strip(); points=max(0,request.form.get("points",type=int) or 0)
@@ -1076,7 +1108,7 @@ def admin_task_add():
 
 
 @app.post("/admin/tasks/<int:task_id>/edit")
-@admin_required
+@permission_required("task.update")
 def admin_task_edit(task_id):
     child_id=request.form.get("child_id",type=int); category=request.form.get("category","").strip(); description=request.form.get("description","").strip()
     points=max(0,request.form.get("points",type=int) or 0); active=1 if request.form.get("active") else 0
@@ -1085,7 +1117,7 @@ def admin_task_edit(task_id):
 
 
 @app.post("/admin/categories/rename")
-@admin_required
+@permission_required("task.update")
 def admin_category_rename():
     child_id=request.form.get("child_id",type=int); old=request.form.get("old_category",""); new=request.form.get("new_category","").strip()
     if new:
@@ -1095,7 +1127,7 @@ def admin_category_rename():
 
 
 @app.post("/admin/rewards/add")
-@admin_required
+@permission_required("reward.manage")
 def admin_reward_add():
     child_id=request.form.get("child_id",type=int); desc=request.form.get("description","").strip(); pts=max(0,request.form.get("required_points",type=int) or 0)
     if desc:
@@ -1107,7 +1139,7 @@ def admin_reward_add():
 
 
 @app.post("/admin/rewards/<int:reward_id>/edit")
-@admin_required
+@permission_required("reward.manage")
 def admin_reward_edit(reward_id):
     child_id=request.form.get("child_id",type=int); desc=request.form.get("description","").strip(); pts=max(0,request.form.get("required_points",type=int) or 0)
     with get_db() as conn: conn.execute("UPDATE rewards SET description=?,required_points=? WHERE id=? AND child_id=?",(desc,pts,reward_id,child_id))
@@ -1115,7 +1147,7 @@ def admin_reward_edit(reward_id):
 
 
 @app.post("/admin/rewards/<int:reward_id>/delete")
-@admin_required
+@permission_required("reward.manage")
 def admin_reward_delete(reward_id):
     child_id=request.form.get("child_id",type=int)
     with get_db() as conn: conn.execute("DELETE FROM rewards WHERE id=? AND child_id=?",(reward_id,child_id))
@@ -1123,7 +1155,7 @@ def admin_reward_delete(reward_id):
 
 
 @app.post("/admin/goals/add")
-@admin_required
+@permission_required("goal.manage")
 def admin_goal_add():
     child_id=request.form.get("child_id",type=int); title=request.form.get("title","").strip(); criteria=request.form.get("criteria","").strip()
     target=max(1,request.form.get("target_value",type=int) or 1); bonus=max(0,request.form.get("bonus_points",type=int) or 0)
@@ -1137,7 +1169,7 @@ def admin_goal_add():
 
 
 @app.post("/admin/goals/<int:goal_id>/edit")
-@admin_required
+@permission_required("goal.manage")
 def admin_goal_edit(goal_id):
     child_id=request.form.get("child_id",type=int); title=request.form.get("title","").strip(); criteria=request.form.get("criteria","").strip()
     target=max(1,request.form.get("target_value",type=int) or 1); bonus=max(0,request.form.get("bonus_points",type=int) or 0); active=1 if request.form.get("active") else 0
@@ -1146,7 +1178,7 @@ def admin_goal_edit(goal_id):
 
 
 @app.post("/admin/goals/<int:goal_id>/progress")
-@admin_required
+@permission_required("goal.manage")
 def admin_goal_progress(goal_id):
     child_id=request.form.get("child_id",type=int); value=max(0,request.form.get("current_value",type=int) or 0); note=request.form.get("note","").strip()[:250]
     completed=request.form.get("completed_date","").strip() or None
@@ -1161,7 +1193,7 @@ def admin_goal_progress(goal_id):
 
 
 @app.post("/admin/goals/<int:goal_id>/delete")
-@admin_required
+@permission_required("goal.manage")
 def admin_goal_delete(goal_id):
     child_id=request.form.get("child_id",type=int)
     with get_db() as conn: conn.execute("DELETE FROM goals WHERE id=? AND child_id=?",(goal_id,child_id))
