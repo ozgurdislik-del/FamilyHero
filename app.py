@@ -232,6 +232,22 @@ def normalize_family_code(value):
     return value[:40]
 
 
+def assign_membership_role(conn, membership_id, role_key):
+    """Bir aile üyeliğine rol atar; rol bulunamazsa işlemi güvenli biçimde durdurur."""
+    role = conn.execute(
+        "SELECT id FROM roles WHERE role_key=?",
+        (role_key,),
+    ).fetchone()
+    if not role:
+        raise RuntimeError(f"RBAC rolü bulunamadı: {role_key}")
+    conn.execute(
+        """INSERT INTO membership_roles(membership_id,role_id)
+           VALUES(?,?)
+           ON CONFLICT DO NOTHING""",
+        (membership_id, role["id"]),
+    )
+
+
 def create_family_owner(*, family_name, family_code, username, email, password):
     family_name = (family_name or "").strip()[:100]
     family_code = normalize_family_code(family_code)
@@ -276,11 +292,7 @@ def create_family_owner(*, family_name, family_code, username, email, password):
                VALUES(?,?,?,?) RETURNING id""",
             (family["id"], user["id"], "adult", "active"),
         ).fetchone()
-        conn.execute(
-            """INSERT INTO membership_roles(membership_id,role_id)
-               SELECT ?,id FROM roles WHERE role_key='family_owner'""",
-            (membership["id"],),
-        )
+        assign_membership_role(conn, membership["id"], "family_owner")
 
     return {
         "family_id": family["id"],
@@ -302,7 +314,7 @@ def inject_release_info():
         except Exception:
             family_name = None
     return {
-        "app_version": "4.31.0-beta",
+        "app_version": "4.31.1-beta",
         "current_family_name": family_name,
         "is_platform_admin": is_platform_admin(),
         "current_admin_name": session.get("admin_name", "Yönetici"),
@@ -924,11 +936,7 @@ def admin_add_child():
                    VALUES(?,?,?,?,?) RETURNING id""",
                 (family["id"], user["id"], "child", new_child_id, "active"),
             ).fetchone()
-            conn.execute(
-                """INSERT INTO membership_roles(membership_id,role_id)
-                   SELECT ?,id FROM roles WHERE role_key='child'""",
-                (membership["id"],),
-            )
+            assign_membership_role(conn, membership["id"], "child")
     except Exception as exc:
         if "UNIQUE" in str(exc).upper():
             flash("Bu kullanıcı anahtarı zaten kullanılıyor.", "error")

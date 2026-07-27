@@ -1,3 +1,9 @@
+# 4.31.1-beta — Aile Oluşturma Düzeltmesi
+
+- PostgreSQL üzerinde aile oluştururken oluşan `membership_roles ... RETURNING id` hatası düzeltildi.
+- Aile yöneticisi ve çocuk rol atamaları güvenli bir yardımcı fonksiyonda toplandı.
+- Rol bulunamadığında işlem transaction ile geri alınır; yarım aile kaydı bırakılmaz.
+
 # 4.31.0-beta — Super Admin Aile Yönetimi
 
 - Süper admin menüsüne **Aile Yönetimi** ekranı eklendi.
