@@ -320,7 +320,7 @@ def inject_release_info():
         except Exception:
             family_name = None
     return {
-        "app_version": "4.32.0-beta",
+        "app_version": "4.32.1-beta",
         "current_family_name": family_name,
         "is_platform_admin": is_platform_admin(),
         "current_admin_name": session.get("admin_name", "Yönetici"),
@@ -375,9 +375,11 @@ def login_family_members(family_id):
                             AND r.role_key IN ('platform_admin','family_owner','family_admin','parent')
                       ) THEN 1 ELSE 0 END AS is_admin
                  FROM family_memberships fm
-                 JOIN users u ON u.id=fm.user_id AND u.active=1
+                 LEFT JOIN users u ON u.id=fm.user_id
                  LEFT JOIN children c ON c.id=fm.child_id
                 WHERE fm.family_id=? AND fm.status='active'
+                  AND ((fm.member_kind='child' AND c.id IS NOT NULL)
+                       OR (fm.member_kind<>'child' AND COALESCE(u.active,0)=1))
                 ORDER BY CASE WHEN fm.member_kind='adult' THEN 0 ELSE 1 END,
                          COALESCE(c.name,u.display_name,fm.login_name)""",
             (family_id,),

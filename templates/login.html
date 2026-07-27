@@ -14,7 +14,7 @@
     <input type="hidden" name="mode" value="{{ mode }}">
 
     <div class="auth-logo">F</div>
-    <h2>FamilyHero girişi</h2>
+    <h2>{% if mode == 'adult' %}Yönetici / Süper Admin girişi{% else %}FamilyHero girişi{% endif %}</h2>
 
     <div class="login-step">
       <span class="step-number">1</span>
@@ -40,7 +40,7 @@
         <select id="membershipId" name="membership_id" required disabled>
           <option value="">Önce aileyi seçin</option>
         </select>
-        <small class="field-hint">Yönetici veya çocuk profilini seçin.</small>
+        <small class="field-hint" id="memberModeHint">{% if mode == 'adult' %}Bu girişte yalnızca yönetici ve süper admin hesapları listelenir.{% else %}Bu ailedeki yönetici ve çocuk profilleri listelenir.{% endif %}</small>
       </div>
     </div>
 
@@ -55,6 +55,11 @@
     <button id="loginButton" type="submit" disabled>Giriş yap</button>
     <a href="{{ url_for('forgot_password') }}">Şifremi unuttum</a>
     <a href="{{ url_for('register_family') }}">Yeni aile oluştur</a>
+    {% if mode == 'adult' %}
+      <a class="platform-login-link" href="{{ url_for('login') }}">← Tüm aile üyelerinin girişine dön</a>
+    {% else %}
+      <a class="platform-login-link" href="{{ url_for('admin_login') }}">🛡 Süper Admin / Yönetici girişi</a>
+    {% endif %}
   </form>
 </section>
 
@@ -104,6 +109,11 @@
       return;
     }
     const members = await response.json();
+    if(!members.length){
+      membershipSelect.innerHTML = `<option value="">${mode === 'adult' ? 'Bu ailede aktif yönetici yok' : 'Bu ailede aktif kullanıcı yok'}</option>`;
+      membershipSelect.disabled = true;
+      return;
+    }
     membershipSelect.innerHTML = '<option value="">Kullanıcı seçin</option>' + members.map(member => {
       const icon = member.member_kind === 'child' ? '🧒' : '👤';
       const role = member.member_kind === 'child' ? 'Çocuk' : 'Yönetici';
