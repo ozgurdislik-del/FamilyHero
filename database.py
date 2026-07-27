@@ -747,8 +747,36 @@ def init_db():
         conn.execute('ALTER TABLE family_memberships ALTER COLUMN login_name SET NOT NULL')
         conn.execute('ALTER TABLE children DROP CONSTRAINT IF EXISTS children_child_key_key')
         conn.execute('DROP INDEX IF EXISTS children_child_key_key')
-        conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS children_family_child_key_unique ON children(family_id,LOWER(child_key))')
-        conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS family_memberships_family_login_unique ON family_memberships(family_id,LOWER(login_name))')
+        conn.execute('DROP INDEX IF EXISTS children_family_child_key_unique')
+        conn.execute('DROP INDEX IF EXISTS family_memberships_family_login_unique')
+
+        # v4.33: Login names are globally unique. Keep the oldest/default-family
+        # name and rename later duplicates deterministically before adding indexes.
+        conn.execute('''WITH ranked AS (
+                            SELECT fm.id,
+                                   ROW_NUMBER() OVER(
+                                       PARTITION BY LOWER(fm.login_name)
+                                       ORDER BY CASE WHEN f.slug='default-family' THEN 0 ELSE 1 END, fm.id
+                                   ) AS rn,
+                                   f.slug
+                              FROM family_memberships fm
+                              JOIN families f ON f.id=fm.family_id
+                       )
+                       UPDATE family_memberships fm
+                          SET login_name=ranked.slug || '-' || fm.login_name || '-' || fm.id
+                         FROM ranked
+                        WHERE fm.id=ranked.id AND ranked.rn>1''')
+        conn.execute('''UPDATE children c
+                           SET child_key=fm.login_name
+                          FROM family_memberships fm
+                         WHERE fm.child_id=c.id AND LOWER(c.child_key)<>LOWER(fm.login_name)''')
+        conn.execute('''UPDATE users u
+                           SET username=fm.login_name
+                          FROM family_memberships fm
+                         WHERE fm.user_id=u.id AND LOWER(u.username)<>LOWER(fm.login_name)''')
+        conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS family_memberships_login_global_unique ON family_memberships(LOWER(login_name))')
+        conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS children_child_key_global_unique ON children(LOWER(child_key))')
+        conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS users_username_lower_global_unique ON users(LOWER(username))')
         conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS children_email_unique ON children (LOWER(email)) WHERE email IS NOT NULL')
         import_bundled_sqlite_if_empty(conn)
         admin_row = conn.execute("SELECT id,password_hash FROM admins WHERE username='admin'").fetchone()
@@ -876,17 +904,17 @@ def init_db():
             if membership:
                 user = {'id': membership['user_id']}
                 conn.execute(
-                    '''UPDATE users SET display_name=?,email=COALESCE(?,email),
+                    '''UPDATE users SET username=?,display_name=?,email=COALESCE(?,email),
                               password_hash=COALESCE(password_hash,?),user_type='member',updated_at=CURRENT_TIMESTAMP
                          WHERE id=?''',
-                    (child_row['name'], child_row.get('email'), child_row['password_hash'], user['id']),
+                    (child_row['child_key'], child_row['name'], child_row.get('email'), child_row['password_hash'], user['id']),
                 )
                 conn.execute(
                     "UPDATE family_memberships SET login_name=?,status='active' WHERE id=?",
                     (child_row['child_key'], membership['id']),
                 )
             else:
-                internal_username = make_internal_username(family_row['slug'], child_row['child_key'])
+                internal_username = child_row['child_key']
                 user = conn.execute(
                     '''INSERT INTO users(email,username,display_name,password_hash,user_type)
                        VALUES(?,?,?,?,?)

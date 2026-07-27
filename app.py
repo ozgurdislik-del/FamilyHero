@@ -15,7 +15,7 @@ from flask_wtf import CSRFProtect
 from flask_wtf.csrf import generate_csrf
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-from database import (AVATARS, GOAL_SEEDS, SEED_DATA, clone_family_templates, copy_family_defaults_to_child, copy_template, get_db, init_db, make_internal_username)
+from database import (AVATARS, GOAL_SEEDS, SEED_DATA, clone_family_templates, copy_family_defaults_to_child, copy_template, get_db, init_db)
 from config import Config
 from services.authz import is_platform_admin, permission_required, platform_admin_required
 from services.audit import audit_event
@@ -271,6 +271,8 @@ def create_family_owner(*, family_name, family_code, username, email, password):
     with get_db() as conn:
         if conn.execute("SELECT 1 FROM families WHERE LOWER(slug)=LOWER(?)", (family_code,)).fetchone():
             errors["family_code"] = "Bu aile kodu zaten kullanılıyor."
+        if conn.execute("SELECT 1 FROM users WHERE LOWER(username)=LOWER(?)", (username,)).fetchone():
+            errors["username"] = "Bu kullanıcı adı platformda zaten kullanılıyor."
         if email and conn.execute("SELECT 1 FROM users WHERE LOWER(email)=LOWER(?)", (email,)).fetchone():
             errors["email"] = "Bu e-posta adresi zaten kullanılıyor."
         if errors:
@@ -281,11 +283,10 @@ def create_family_owner(*, family_name, family_code, username, email, password):
             "INSERT INTO families(name,slug) VALUES(?,?) RETURNING id",
             (family_name, family_code),
         ).fetchone()
-        internal_username = make_internal_username(family_code, username)
         user = conn.execute(
             """INSERT INTO users(email,username,display_name,password_hash,user_type)
                VALUES(?,?,?,?,?) RETURNING id""",
-            (email, internal_username, family_name + " Yöneticisi", generate_password_hash(password), "member"),
+            (email, username, family_name + " Yöneticisi", generate_password_hash(password), "member"),
         ).fetchone()
         conn.execute(
             "UPDATE families SET created_by_user_id=? WHERE id=?",
@@ -320,7 +321,7 @@ def inject_release_info():
         except Exception:
             family_name = None
     return {
-        "app_version": "4.32.1-beta",
+        "app_version": "4.33.0-beta",
         "current_family_name": family_name,
         "is_platform_admin": is_platform_admin(),
         "current_admin_name": session.get("admin_name", "Yönetici"),
@@ -403,29 +404,9 @@ def login():
     if session.get("child_id"):
         return redirect(url_for("dashboard"))
 
-    mode = (request.values.get("mode") or "all").lower()
-    if mode not in {"all", "adult", "child"}:
-        mode = "all"
-    selected_family_id = request.values.get("family_id", type=int)
-    selected_membership_id = request.values.get("membership_id", type=int)
-    selected_family = None
-
-    if selected_family_id:
-        with get_db() as conn:
-            selected_family = conn.execute(
-                "SELECT id,name,slug FROM families WHERE id=? AND status='active'",
-                (selected_family_id,),
-            ).fetchone()
-
+    username = (request.form.get("username") or "").strip().lower()
     if request.method == "POST":
         password = request.form.get("password", "")
-        if not selected_family or not selected_membership_id:
-            flash("Önce aileyi ve kullanıcıyı seçin.", "error")
-            return render_template(
-                "login.html", selected_family=selected_family,
-                selected_membership_id=selected_membership_id, mode=mode,
-            ), 400
-
         with get_db() as conn:
             member = conn.execute(
                 """SELECT fm.id AS membership_id,fm.family_id,fm.login_name,fm.member_kind,fm.child_id,
@@ -437,23 +418,21 @@ def login():
                               WHERE mr.membership_id=fm.id
                                 AND r.role_key IN ('platform_admin','family_owner','family_admin','parent')
                           ) THEN 1 ELSE 0 END AS is_admin
-                     FROM family_memberships fm
-                     JOIN users u ON u.id=fm.user_id AND u.active=1
+                     FROM users u
+                     JOIN family_memberships fm ON fm.user_id=u.id AND fm.status='active'
                      LEFT JOIN children c ON c.id=fm.child_id
-                    WHERE fm.id=? AND fm.family_id=? AND fm.status='active'""",
-                (selected_membership_id, selected_family_id),
+                    WHERE LOWER(u.username)=LOWER(?) AND u.active=1
+                    LIMIT 1""",
+                (username,),
             ).fetchone()
 
         password_hash = None
         if member:
             password_hash = member["child_password_hash"] if member["member_kind"] == "child" else member["user_password_hash"]
         if not member or not password_hash or not check_password_hash(password_hash, password):
-            audit_event("auth.login.failed", "membership", selected_membership_id)
-            flash("Aile, kullanıcı veya şifre hatalı.", "error")
-            return render_template(
-                "login.html", selected_family=selected_family,
-                selected_membership_id=selected_membership_id, mode=mode,
-            ), 401
+            audit_event("auth.login.failed", "username", username or None)
+            flash("Kullanıcı adı veya şifre hatalı.", "error")
+            return render_template("login.html", username=username), 401
 
         session.clear()
         session.permanent = True
@@ -474,10 +453,7 @@ def login():
         session.clear()
         abort(403)
 
-    return render_template(
-        "login.html", selected_family=selected_family,
-        selected_membership_id=selected_membership_id, mode=mode,
-    )
+    return render_template("login.html", username=username)
 
 
 @app.post("/logout")
@@ -1070,10 +1046,10 @@ def admin_add_child():
     try:
         with get_db() as conn:
             if conn.execute(
-                "SELECT 1 FROM children WHERE family_id=? AND LOWER(child_key)=LOWER(?)",
-                (family_id, child_key),
+                "SELECT 1 FROM users WHERE LOWER(username)=LOWER(?)",
+                (child_key,),
             ).fetchone():
-                flash("Bu ailede bu kullanıcı adı zaten kullanılıyor.", "error")
+                flash("Bu kullanıcı adı platformda zaten kullanılıyor.", "error")
                 return redirect(url_for("admin_panel"))
             if conn.execute("SELECT 1 FROM users WHERE LOWER(email)=LOWER(?)", (email,)).fetchone():
                 flash("Bu e-posta adresi başka bir profilde kullanılıyor.", "error")
@@ -1101,7 +1077,7 @@ def admin_add_child():
             user = conn.execute(
                 """INSERT INTO users(email,username,display_name,password_hash,user_type)
                    VALUES(?,?,?,?,?) RETURNING id""",
-                (email, make_internal_username(family["slug"], child_key), name, password_hash, "member"),
+                (email, child_key, name, password_hash, "member"),
             ).fetchone()
             membership = conn.execute(
                 """INSERT INTO family_memberships(family_id,user_id,member_kind,child_id,login_name,status)

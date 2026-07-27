@@ -1,163 +1,30 @@
 {% extends "base.html" %}
 {% block title %}Giriş | FamilyHero{% endblock %}
 {% block content %}
-<section class="auth-shell family-member-login">
+<section class="auth-shell">
   <div class="auth-copy">
     <span class="eyebrow">AİLECE BAŞAR</span>
-    <h1>Önce aileni, sonra kendi profilini seç.</h1>
-    <p>Aynı kullanıcı adı farklı ailelerde kullanılabilir. Doğru aileyi seçtikten sonra şifrenle giriş yap.</p>
+    <h1>Kullanıcı adınla doğrudan giriş yap.</h1>
+    <p>Kullanıcı adın FamilyHero genelinde benzersizdir. Sistem bağlı olduğun aileyi otomatik olarak bulur.</p>
   </div>
 
-  <form method="post" class="auth-card member-login-card" id="memberLoginForm">
+  <form method="post" class="auth-card" autocomplete="on">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <input type="hidden" name="family_id" id="familyId" value="{{ selected_family.id if selected_family else '' }}">
-    <input type="hidden" name="mode" value="{{ mode }}">
-
     <div class="auth-logo">F</div>
-    <h2>{% if mode == 'adult' %}Yönetici / Süper Admin girişi{% else %}FamilyHero girişi{% endif %}</h2>
+    <h2>FamilyHero girişi</h2>
 
-    <div class="login-step">
-      <span class="step-number">1</span>
-      <div class="login-step-body">
-        <label for="familySearch">Aileni bul</label>
-        <div class="family-search-box">
-          <input id="familySearch" type="search" autocomplete="off"
-                 placeholder="Aile adı veya aile kodu yazın"
-                 value="{{ selected_family.name if selected_family else '' }}">
-          <button type="button" id="familySearchButton" aria-label="Aile ara">Ara</button>
-        </div>
-        <div class="family-search-results" id="familyResults" hidden></div>
-        <small id="selectedFamilyHint" class="field-hint">
-          {% if selected_family %}Seçili aile: {{ selected_family.name }} · {{ selected_family.slug }}{% else %}Yazdıkça eşleşen aileler listelenir.{% endif %}
-        </small>
-      </div>
-    </div>
+    <label for="username">Kullanıcı adı
+      <input id="username" name="username" value="{{ username or '' }}" required autofocus autocomplete="username">
+    </label>
+    <label for="password">Şifre
+      <input id="password" name="password" type="password" required autocomplete="current-password">
+    </label>
+    <small class="field-hint">Aile seçmen gerekmez; kullanıcı adından ailen otomatik belirlenir.</small>
 
-    <div class="login-step">
-      <span class="step-number">2</span>
-      <div class="login-step-body">
-        <label for="membershipId">Kullanıcı</label>
-        <select id="membershipId" name="membership_id" required disabled>
-          <option value="">Önce aileyi seçin</option>
-        </select>
-        <small class="field-hint" id="memberModeHint">{% if mode == 'adult' %}Bu girişte yalnızca yönetici ve süper admin hesapları listelenir.{% else %}Bu ailedeki yönetici ve çocuk profilleri listelenir.{% endif %}</small>
-      </div>
-    </div>
-
-    <div class="login-step">
-      <span class="step-number">3</span>
-      <div class="login-step-body">
-        <label for="password">Şifre</label>
-        <input id="password" name="password" type="password" required autocomplete="current-password">
-      </div>
-    </div>
-
-    <button id="loginButton" type="submit" disabled>Giriş yap</button>
+    <button type="submit">Giriş yap</button>
     <a href="{{ url_for('forgot_password') }}">Şifremi unuttum</a>
     <a href="{{ url_for('register_family') }}">Yeni aile oluştur</a>
-    {% if mode == 'adult' %}
-      <a class="platform-login-link" href="{{ url_for('login') }}">← Tüm aile üyelerinin girişine dön</a>
-    {% else %}
-      <a class="platform-login-link" href="{{ url_for('admin_login') }}">🛡 Süper Admin / Yönetici girişi</a>
-    {% endif %}
+    <a class="platform-login-link" href="{{ url_for('admin_login') }}">🛡 Süper Admin girişi</a>
   </form>
 </section>
-
-<script>
-(function(){
-  const familySearch = document.getElementById('familySearch');
-  const familyId = document.getElementById('familyId');
-  const familyResults = document.getElementById('familyResults');
-  const familySearchButton = document.getElementById('familySearchButton');
-  const selectedFamilyHint = document.getElementById('selectedFamilyHint');
-  const membershipSelect = document.getElementById('membershipId');
-  const loginButton = document.getElementById('loginButton');
-  const selectedMembershipId = {{ (selected_membership_id or 0)|tojson }};
-  const mode = {{ mode|tojson }};
-  let timer;
-
-  function escapeHtml(value){
-    return String(value || '').replace(/[&<>'"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
-  }
-
-  async function searchFamilies(){
-    const query = familySearch.value.trim();
-    if(query.length < 2){
-      familyResults.innerHTML = '<div class="family-result-empty">Aramak için en az 2 karakter yazın.</div>';
-      familyResults.hidden = false;
-      return;
-    }
-    const response = await fetch(`{{ url_for('login_family_search') }}?q=${encodeURIComponent(query)}`);
-    if(!response.ok) return;
-    const families = await response.json();
-    familyResults.innerHTML = families.length ? families.map(family => `
-      <button type="button" class="family-result" data-id="${family.id}" data-name="${escapeHtml(family.name)}" data-slug="${escapeHtml(family.slug)}">
-        <strong>${escapeHtml(family.name)}</strong><small>${escapeHtml(family.slug)}</small>
-      </button>`).join('') : '<div class="family-result-empty">Eşleşen aile bulunamadı.</div>';
-    familyResults.hidden = false;
-  }
-
-  async function loadMembers(selectedId){
-    const id = familyId.value;
-    membershipSelect.disabled = true;
-    loginButton.disabled = true;
-    membershipSelect.innerHTML = '<option value="">Kullanıcılar yükleniyor…</option>';
-    if(!id) return;
-    const response = await fetch(`/api/login/families/${id}/members?mode=${encodeURIComponent(mode)}`);
-    if(!response.ok){
-      membershipSelect.innerHTML = '<option value="">Kullanıcılar yüklenemedi</option>';
-      return;
-    }
-    const members = await response.json();
-    if(!members.length){
-      membershipSelect.innerHTML = `<option value="">${mode === 'adult' ? 'Bu ailede aktif yönetici yok' : 'Bu ailede aktif kullanıcı yok'}</option>`;
-      membershipSelect.disabled = true;
-      return;
-    }
-    membershipSelect.innerHTML = '<option value="">Kullanıcı seçin</option>' + members.map(member => {
-      const icon = member.member_kind === 'child' ? '🧒' : '👤';
-      const role = member.member_kind === 'child' ? 'Çocuk' : 'Yönetici';
-      return `<option value="${member.membership_id}">${icon} ${escapeHtml(member.display_name)} · ${escapeHtml(member.login_name)} (${role})</option>`;
-    }).join('');
-    membershipSelect.disabled = false;
-    if(selectedId){
-      membershipSelect.value = String(selectedId);
-    }
-    loginButton.disabled = !membershipSelect.value;
-  }
-
-  function selectFamily(button){
-    familyId.value = button.dataset.id;
-    familySearch.value = button.dataset.name;
-    selectedFamilyHint.textContent = `Seçili aile: ${button.dataset.name} · ${button.dataset.slug}`;
-    familyResults.hidden = true;
-    loadMembers(selectedMembershipId);
-  }
-
-  familyResults.addEventListener('click', event => {
-    const button = event.target.closest('.family-result');
-    if(button) selectFamily(button);
-  });
-  familySearch.addEventListener('input', () => {
-    familyId.value = '';
-    membershipSelect.innerHTML = '<option value="">Önce aileyi seçin</option>';
-    membershipSelect.disabled = true;
-    loginButton.disabled = true;
-    clearTimeout(timer);
-    timer = setTimeout(searchFamilies, 300);
-  });
-  familySearch.addEventListener('focus', searchFamilies);
-  familySearchButton.addEventListener('click', searchFamilies);
-  membershipSelect.addEventListener('change', () => { loginButton.disabled = !membershipSelect.value; });
-  document.addEventListener('click', event => {
-    if(!familyResults.contains(event.target) && event.target !== familySearch && event.target !== familySearchButton){
-      familyResults.hidden = true;
-    }
-  });
-
-  if(familyId.value){
-    loadMembers(selectedMembershipId);
-  }
-})();
-</script>
 {% endblock %}

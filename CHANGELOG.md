@@ -49,3 +49,10 @@
 - Kritik yönetim işlemleri için audit log desteği
 - `.gitignore`, `.env.example` ve güvenlik dokümantasyonu
 - Güvenlik kodunun servis modüllerine ayrılması
+
+## 4.33.0-beta
+- Ana giriş ekranından aile seçimi kaldırıldı.
+- Kullanıcı adları platform genelinde benzersiz hale getirildi.
+- Kullanıcı adıyla girişte aile otomatik belirleniyor.
+- Süper admin aile arama ve aile çalışma alanına geçiş ekranı korundu.
+- Eski aileler arasındaki mükerrer kullanıcı adları migration sırasında güvenli biçimde yeniden adlandırılıyor.
