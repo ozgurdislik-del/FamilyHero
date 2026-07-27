@@ -1,3 +1,14 @@
+# 4.32.2-beta — Yönetici Girişi ve Tasarım Tutarlılığı Düzeltmeleri
+
+## Kod düzeltmeleri
+- **Ölü uç nokta düzeltildi:** `/admin/login` artık gerçek bir giriş ekranı sunuyor. Önceden bu route sadece `login?mode=adult` adresine yönlendiriyordu; bu yüzden `templates/admin_login.html` hiçbir zaman render edilmiyordu (kod tabanında hiçbir `render_template("admin_login.html")` çağrısı yoktu) ve kartı güncelleyen kimse fark etmiyordu.
+- **Yönetici girişi artık tek adımda çalışıyor:** Kullanıcı adı platform genelinde zaten benzersiz olduğu için (`users.username UNIQUE`), yöneticiler/aile sahipleri/süper adminler önce aileyi arayıp sonra kendini listeden seçmek zorunda kalmadan doğrudan kullanıcı adı + şifre ile giriş yapabiliyor. Aile/çocuk girişi (`/` , step'li arama akışı) olduğu gibi korundu.
+- Yeni giriş ucu için de `10/dakika` rate limit ve başarısız/başarılı girişler için audit log eklendi (`auth.admin_login.failed`, `auth.login.success`).
+
+## Tasarım düzeltmeleri
+- `static/style.css` içinde, hiçbir class/media query ile sınırlanmamış tamamlanmamış bir "FamilyHero 2.2 — Compact Corporate UI" taslağı; `body`, `.auth-card`, `.auth-shell`, `.flash`, `.sidebar`, `.admin-layout`, buton/input gibi temel seçicileri asıl temadan **sonra** yeniden tanımlayıp CSS cascade'inde sessizce kazanıyordu. Sonuç: tüm site (özellikle giriş ve yönetici/süper admin giriş ekranları) tasarlanandan daha küçük fontlu, düz köşeli (4px yerine 18-22px radius) ve donuk gölgeli görünüyordu. Bu çakışan blok kaldırıldı; yalnızca hâlâ kullanılan birkaç CSS değişkeni (`--fh-border` vb.) korundu.
+- `templates/admin_login.html` sıfırdan, sitenin geri kalanıyla aynı `auth-shell`/`auth-card` tasarım diline uygun şekilde yeniden yazıldı; hata mesajları artık `base.html`'deki ortak `flash` mekanizmasıyla gösteriliyor.
+
 # 4.32.0-beta — Aile ve Üye Seçimli Giriş
 
 - Giriş akışı aile arama → üye seçme → şifre olarak yenilendi.

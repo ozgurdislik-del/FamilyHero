@@ -777,8 +777,62 @@ def reset_password(token):
 
 
 @app.route("/admin/login", methods=["GET", "POST"])
+@limiter.limit("10 per minute", methods=["POST"])
 def admin_login():
-    return redirect(url_for("login", mode="adult"))
+    if session.get("admin_id"):
+        return redirect(url_for("admin_panel"))
+
+    username = ""
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
+
+        with get_db() as conn:
+            user = conn.execute(
+                "SELECT id,username,display_name,password_hash FROM users WHERE LOWER(username)=LOWER(?) AND active=1",
+                (username,),
+            ).fetchone()
+            membership = None
+            if user:
+                membership = conn.execute(
+                    """SELECT fm.id AS membership_id, fm.family_id, fm.login_name
+                         FROM family_memberships fm
+                         JOIN membership_roles mr ON mr.membership_id=fm.id
+                         JOIN roles r ON r.id=mr.role_id
+                        WHERE fm.user_id=? AND fm.status='active'
+                          AND r.role_key IN ('platform_admin','family_owner','family_admin','parent')
+                        ORDER BY CASE r.role_key
+                                     WHEN 'platform_admin' THEN 0
+                                     WHEN 'family_owner' THEN 1
+                                     WHEN 'family_admin' THEN 2
+                                     ELSE 3
+                                 END, fm.id
+                        LIMIT 1""",
+                    (user["id"],),
+                ).fetchone()
+
+        valid = bool(
+            user and user["password_hash"] and membership
+            and check_password_hash(user["password_hash"], password)
+        )
+        if not valid:
+            audit_event("auth.admin_login.failed", "user", user["id"] if user else None)
+            flash("Kullanıcı adı veya şifre hatalı.", "error")
+            return render_template("admin_login.html", username=username), 401
+
+        session.clear()
+        session.permanent = True
+        session.update(
+            user_id=user["id"],
+            family_id=membership["family_id"],
+            membership_id=membership["membership_id"],
+            admin_id=user["id"],
+            admin_name=user["display_name"] or membership["login_name"],
+        )
+        audit_event("auth.login.success", "admin", user["id"])
+        return redirect(url_for("admin_panel"))
+
+    return render_template("admin_login.html", username=username)
 
 
 @app.route("/register-family", methods=["GET", "POST"])
