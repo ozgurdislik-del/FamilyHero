@@ -1,3 +1,9 @@
+# 4.32.3-beta — Görev/Ödül/Hedef Panelinde Kategori Seçimi ve Tek Buton
+
+- Sol kategori listesinden bir öğeye tıklamak artık sağda **yalnızca o kategoriyi** açık gösteriyor (önceden tıklanan kategori açılıyor ama diğerleri de açık kalabiliyordu). Seçili kategori sol listede vurgulanıyor.
+- "Tümünü daralt" / "Tümünü aç" iki ayrı buton yerine **tek bir buton** oldu: en az bir grup açıksa buton "Tümünü daralt" yazıyor ve tıklanınca hepsini kapatıp kendini "Tümünü aç" olarak güncelliyor; hepsi kapalıyken de tersi oluyor.
+- Bu tek buton artık yalnızca Görevler'de değil, **Ödüller** ve **Hedefler** bölümlerinde de var (önceden bu ikisinde hiç toplu aç/kapat kontrolü yoktu).
+
 # 4.32.2-beta — Yönetici Girişi ve Tasarım Tutarlılığı Düzeltmeleri
 
 ## Kod düzeltmeleri
