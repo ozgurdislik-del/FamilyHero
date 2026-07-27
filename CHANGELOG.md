@@ -1,3 +1,12 @@
+# 4.32.0-beta — Aile ve Üye Seçimli Giriş
+
+- Giriş akışı aile arama → üye seçme → şifre olarak yenilendi.
+- Aynı görünen kullanıcı adı farklı ailelerde kullanılabilir hale getirildi.
+- Yeni ailelere ana ailenin görev, ödül ve hedef varsayılanları kopyalanır.
+- Yeni çocuk eklenince aile varsayılanları otomatik uygulanır.
+- Süper admin aile listesine sunucu taraflı arama, otomatik filtreleme ve 50 sonuç sınırı eklendi.
+- Çocuk kullanıcı anahtarı benzersizliği platform geneli yerine aile bazına taşındı.
+
 # 4.31.1-beta — Aile Oluşturma Düzeltmesi
 
 - PostgreSQL üzerinde aile oluştururken oluşan `membership_roles ... RETURNING id` hatası düzeltildi.

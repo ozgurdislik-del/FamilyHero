@@ -108,26 +108,25 @@ def platform_admin_required(view):
     return wrapped
 
 
-def establish_identity_session(username, *, child_id=None, admin_id=None):
+def establish_identity_session(*, user_id, family_id, child_id=None, admin_id=None):
+    """Kimliği global kullanıcı adına göre değil, açık user/family kimliğiyle oturuma bağlar."""
     with get_db() as conn:
         identity = conn.execute(
-            """
-            SELECT u.id AS user_id, fm.family_id
-              FROM users u
-              LEFT JOIN family_memberships fm
-                ON fm.user_id=u.id AND fm.status='active'
-             WHERE u.username=? AND u.active=1
-             ORDER BY fm.id NULLS LAST
-             LIMIT 1
-            """,
-            (username,),
+            """SELECT u.id AS user_id,fm.family_id,fm.id AS membership_id
+                 FROM users u
+                 JOIN family_memberships fm ON fm.user_id=u.id AND fm.status='active'
+                WHERE u.id=? AND fm.family_id=? AND u.active=1
+                LIMIT 1""",
+            (user_id, family_id),
         ).fetchone()
     if not identity:
         return False
     session["user_id"] = identity["user_id"]
-    session["family_id"] = identity.get("family_id")
+    session["family_id"] = identity["family_id"]
+    session["membership_id"] = identity["membership_id"]
     if child_id is not None:
         session["child_id"] = child_id
     if admin_id is not None:
         session["admin_id"] = admin_id
     return True
+

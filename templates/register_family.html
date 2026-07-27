@@ -23,8 +23,8 @@
     {% if errors.family_code %}<small class="field-error">{{ errors.family_code }}</small>{% endif %}
 
     <label for="username">Yönetici kullanıcı adı</label>
-    <input id="username" name="username" required minlength="4" maxlength="50" value="{{ form.username }}" placeholder="ornek-ailesi_admin" autocomplete="username">
-    <small class="field-hint">Platform genelinde benzersiz olmalıdır.</small>
+    <input id="username" name="username" required minlength="4" maxlength="50" value="{{ form.username }}" placeholder="admin" autocomplete="username">
+    <small class="field-hint">Aynı kullanıcı adı farklı ailelerde kullanılabilir.</small>
     {% if errors.username %}<small class="field-error">{{ errors.username }}</small>{% endif %}
 
     <label for="email">E-posta <span class="optional-label">isteğe bağlı</span></label>
@@ -55,7 +55,7 @@
   name.addEventListener('input',()=>{
     const generated = slugify(name.value);
     if(!codeTouched) code.value = generated;
-    if(!usernameTouched) username.value = (generated ? generated + '_admin' : '').slice(0,50);
+    if(!usernameTouched) username.value = generated ? 'admin' : '';
   });
 })();
 </script>

@@ -258,7 +258,7 @@ def copy_template(conn, child_id, template_key):
 
 
 def sync_seed_child(conn, child_key, child):
-    row = conn.execute('SELECT * FROM children WHERE child_key=?', (child_key,)).fetchone()
+    row = conn.execute("SELECT c.* FROM children c JOIN families f ON f.id=c.family_id WHERE c.child_key=? AND f.slug='default-family'", (child_key,)).fetchone()
     if not row:
         cur = conn.execute("INSERT INTO children(family_id,child_key,name,title,password_hash,avatar_key) VALUES((SELECT id FROM families WHERE slug='default-family'),?,?,?,?,?)",
                            (child_key, child['name'], child['title'], generate_password_hash(_seed_password(f"FAMILYHERO_CHILD_{child_key.upper()}_PASSWORD", f"'{child_key}' çocuk hesabı")), child['avatar']))
@@ -293,6 +293,148 @@ GOAL_SEEDS = [
     ('Yazın Süper Kaşifi', 'Tüm rozetleri tamamlarsa', 1, 7500),
     ('Aylık Görev Şampiyonu', '1 ay boyunca haftalık tüm görevleri yaparsa', 1, 10000),
 ]
+
+
+
+def make_internal_username(family_slug, login_name):
+    """Aynı görünen kullanıcı adını farklı ailelerde güvenle kullanmak için iç kimlik üretir."""
+    return f"{family_slug}::{login_name}".lower()
+
+
+def seed_family_templates_from_live_family(conn, family_id):
+    """Bir ailenin mevcut çocuk ayarlarından tekrar kullanılabilir varsayılan şablonlar üretir."""
+    task_rows = conn.execute(
+        """SELECT t.category,t.description,t.points,t.sort_order
+             FROM tasks t JOIN children c ON c.id=t.child_id
+            WHERE c.family_id=? AND t.active=1
+            ORDER BY c.id,t.sort_order,t.id""",
+        (family_id,),
+    ).fetchall()
+    reward_rows = conn.execute(
+        """SELECT r.required_points,r.description,r.sort_order
+             FROM rewards r JOIN children c ON c.id=r.child_id
+            WHERE c.family_id=?
+            ORDER BY c.id,r.sort_order,r.id""",
+        (family_id,),
+    ).fetchall()
+    goal_rows = conn.execute(
+        """SELECT g.title,g.criteria,g.target_value,g.bonus_points,g.sort_order
+             FROM goals g JOIN children c ON c.id=g.child_id
+            WHERE c.family_id=? AND g.active=1
+            ORDER BY c.id,g.sort_order,g.id""",
+        (family_id,),
+    ).fetchall()
+
+    seen = set()
+    order = 0
+    for row in task_rows:
+        key = (row['category'], row['description'], row['points'])
+        if key in seen:
+            continue
+        seen.add(key)
+        conn.execute(
+            """INSERT INTO family_task_templates(family_id,category,description,points,sort_order)
+               VALUES(?,?,?,?,?) ON CONFLICT DO NOTHING""",
+            (family_id, row['category'], row['description'], row['points'], order),
+        )
+        order += 1
+
+    seen = set()
+    order = 0
+    for row in reward_rows:
+        key = (row['required_points'], row['description'])
+        if key in seen:
+            continue
+        seen.add(key)
+        conn.execute(
+            """INSERT INTO family_reward_templates(family_id,required_points,description,sort_order)
+               VALUES(?,?,?,?) ON CONFLICT DO NOTHING""",
+            (family_id, row['required_points'], row['description'], order),
+        )
+        order += 1
+
+    seen = set()
+    order = 0
+    for row in goal_rows:
+        key = (row['title'], row['criteria'], row['target_value'], row['bonus_points'])
+        if key in seen:
+            continue
+        seen.add(key)
+        conn.execute(
+            """INSERT INTO family_goal_templates(family_id,title,criteria,target_value,bonus_points,sort_order)
+               VALUES(?,?,?,?,?,?) ON CONFLICT DO NOTHING""",
+            (family_id, row['title'], row['criteria'], row['target_value'], row['bonus_points'], order),
+        )
+        order += 1
+
+
+def clone_family_templates(conn, source_family_id, target_family_id):
+    """Kaynak ailenin varsayılan görev, ödül ve hedeflerini yeni aileye kopyalar."""
+    seed_family_templates_from_live_family(conn, source_family_id)
+    conn.execute(
+        """INSERT INTO family_task_templates(family_id,category,description,points,sort_order,active)
+           SELECT ?,category,description,points,sort_order,active
+             FROM family_task_templates WHERE family_id=?
+           ON CONFLICT DO NOTHING""",
+        (target_family_id, source_family_id),
+    )
+    conn.execute(
+        """INSERT INTO family_reward_templates(family_id,required_points,description,sort_order,active)
+           SELECT ?,required_points,description,sort_order,active
+             FROM family_reward_templates WHERE family_id=?
+           ON CONFLICT DO NOTHING""",
+        (target_family_id, source_family_id),
+    )
+    conn.execute(
+        """INSERT INTO family_goal_templates(family_id,title,criteria,target_value,bonus_points,sort_order,active)
+           SELECT ?,title,criteria,target_value,bonus_points,sort_order,active
+             FROM family_goal_templates WHERE family_id=?
+           ON CONFLICT DO NOTHING""",
+        (target_family_id, source_family_id),
+    )
+
+
+def copy_family_defaults_to_child(conn, family_id, child_id):
+    """Aile varsayılanlarını yeni çocuğun düzenlenebilir kişisel kayıtlarına kopyalar."""
+    counts = {'tasks': 0, 'rewards': 0, 'goals': 0}
+    for row in conn.execute(
+        """SELECT category,description,points,sort_order
+             FROM family_task_templates
+            WHERE family_id=? AND active=1 ORDER BY sort_order,id""",
+        (family_id,),
+    ).fetchall():
+        conn.execute(
+            "INSERT INTO tasks(child_id,category,description,points,sort_order) VALUES(?,?,?,?,?)",
+            (child_id, row['category'], row['description'], row['points'], row['sort_order']),
+        )
+        counts['tasks'] += 1
+
+    for row in conn.execute(
+        """SELECT required_points,description,sort_order
+             FROM family_reward_templates
+            WHERE family_id=? AND active=1 ORDER BY sort_order,id""",
+        (family_id,),
+    ).fetchall():
+        conn.execute(
+            "INSERT INTO rewards(child_id,required_points,description,sort_order) VALUES(?,?,?,?)",
+            (child_id, row['required_points'], row['description'], row['sort_order']),
+        )
+        counts['rewards'] += 1
+
+    for row in conn.execute(
+        """SELECT title,criteria,target_value,bonus_points,sort_order
+             FROM family_goal_templates
+            WHERE family_id=? AND active=1 ORDER BY sort_order,id""",
+        (family_id,),
+    ).fetchall():
+        goal = conn.execute(
+            """INSERT INTO goals(child_id,title,criteria,target_value,bonus_points,sort_order)
+               VALUES(?,?,?,?,?,?)""",
+            (child_id, row['title'], row['criteria'], row['target_value'], row['bonus_points'], row['sort_order']),
+        )
+        conn.execute("INSERT INTO goal_progress(goal_id,current_value) VALUES(?,0)", (goal.lastrowid,))
+        counts['goals'] += 1
+    return counts
 
 
 
@@ -365,7 +507,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS children (
             id BIGSERIAL PRIMARY KEY,
             family_id BIGINT,
-            child_key TEXT NOT NULL UNIQUE,
+            child_key TEXT NOT NULL,
             name TEXT NOT NULL,
             email TEXT UNIQUE,
             title TEXT NOT NULL DEFAULT 'Süper Kaşif',
@@ -489,10 +631,41 @@ def init_db():
             user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             member_kind TEXT NOT NULL DEFAULT 'adult',
             child_id BIGINT REFERENCES children(id) ON DELETE SET NULL,
+            login_name TEXT,
             status TEXT NOT NULL DEFAULT 'active',
             joined_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(family_id,user_id),
             UNIQUE(family_id,child_id)
+        );
+        CREATE TABLE IF NOT EXISTS family_task_templates (
+            id BIGSERIAL PRIMARY KEY,
+            family_id BIGINT NOT NULL REFERENCES families(id) ON DELETE CASCADE,
+            category TEXT NOT NULL,
+            description TEXT NOT NULL,
+            points INTEGER NOT NULL CHECK(points >= 0),
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            active INTEGER NOT NULL DEFAULT 1,
+            UNIQUE(family_id,category,description,points)
+        );
+        CREATE TABLE IF NOT EXISTS family_reward_templates (
+            id BIGSERIAL PRIMARY KEY,
+            family_id BIGINT NOT NULL REFERENCES families(id) ON DELETE CASCADE,
+            required_points INTEGER NOT NULL,
+            description TEXT NOT NULL,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            active INTEGER NOT NULL DEFAULT 1,
+            UNIQUE(family_id,required_points,description)
+        );
+        CREATE TABLE IF NOT EXISTS family_goal_templates (
+            id BIGSERIAL PRIMARY KEY,
+            family_id BIGINT NOT NULL REFERENCES families(id) ON DELETE CASCADE,
+            title TEXT NOT NULL,
+            criteria TEXT NOT NULL DEFAULT '',
+            target_value INTEGER NOT NULL DEFAULT 1,
+            bonus_points INTEGER NOT NULL DEFAULT 0,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            active INTEGER NOT NULL DEFAULT 1,
+            UNIQUE(family_id,title,criteria,target_value,bonus_points)
         );
         CREATE TABLE IF NOT EXISTS roles (
             id BIGSERIAL PRIMARY KEY,
@@ -559,6 +732,23 @@ def init_db():
         conn.execute('ALTER TABLE children ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP')
         conn.execute('ALTER TABLE completions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP')
         conn.execute('ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password INTEGER NOT NULL DEFAULT 0')
+        conn.execute('ALTER TABLE family_memberships ADD COLUMN IF NOT EXISTS login_name TEXT')
+        conn.execute('UPDATE family_memberships fm SET login_name=u.username FROM users u WHERE fm.user_id=u.id AND (fm.login_name IS NULL OR fm.login_name=\'\')')
+        conn.execute('UPDATE family_memberships fm SET login_name=c.child_key FROM children c WHERE fm.child_id=c.id')
+        conn.execute("UPDATE family_memberships SET login_name='member-' || id WHERE login_name IS NULL OR login_name=''")
+        conn.execute('''WITH ranked AS (
+                            SELECT id,ROW_NUMBER() OVER(PARTITION BY family_id,LOWER(login_name) ORDER BY id) AS rn
+                              FROM family_memberships
+                       )
+                       UPDATE family_memberships fm
+                          SET login_name=fm.login_name || '-' || ranked.rn
+                         FROM ranked
+                        WHERE fm.id=ranked.id AND ranked.rn>1''')
+        conn.execute('ALTER TABLE family_memberships ALTER COLUMN login_name SET NOT NULL')
+        conn.execute('ALTER TABLE children DROP CONSTRAINT IF EXISTS children_child_key_key')
+        conn.execute('DROP INDEX IF EXISTS children_child_key_key')
+        conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS children_family_child_key_unique ON children(family_id,LOWER(child_key))')
+        conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS family_memberships_family_login_unique ON family_memberships(family_id,LOWER(login_name))')
         conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS children_email_unique ON children (LOWER(email)) WHERE email IS NOT NULL')
         import_bundled_sqlite_if_empty(conn)
         admin_row = conn.execute("SELECT id,password_hash FROM admins WHERE username='admin'").fetchone()
@@ -634,11 +824,11 @@ def init_db():
             ('admin','FamilyHero Yöneticisi',admin_row['password_hash'],'platform_admin'),
         ).fetchone()
         admin_membership = conn.execute(
-            """INSERT INTO family_memberships(family_id,user_id,member_kind,status)
-               VALUES(?,?,?,?)
-               ON CONFLICT(family_id,user_id) DO UPDATE SET status='active'
+            """INSERT INTO family_memberships(family_id,user_id,member_kind,login_name,status)
+               VALUES(?,?,?,?,?)
+               ON CONFLICT(family_id,user_id) DO UPDATE SET login_name=excluded.login_name,status='active'
                RETURNING id""",
-            (family_id,admin_user['id'],'adult','active'),
+            (family_id,admin_user['id'],'adult','admin','active'),
         ).fetchone()
         conn.execute(
             "UPDATE families SET created_by_user_id=COALESCE(created_by_user_id,?) WHERE id=?",
@@ -675,29 +865,51 @@ def init_db():
         for key, child in SEED_DATA.items():
             sync_seed_child(conn, key, child)
 
-        for child_row in conn.execute('SELECT id,child_key,name,password_hash,email FROM children ORDER BY id').fetchall():
-            user = conn.execute(
-                """INSERT INTO users(email,username,display_name,password_hash,user_type)
-                   VALUES(?,?,?,?,?)
-                   ON CONFLICT(username) DO UPDATE SET
-                       display_name=excluded.display_name,
-                       email=COALESCE(excluded.email,users.email),
-                       password_hash=COALESCE(users.password_hash,excluded.password_hash),
-                       user_type='member'
-                   RETURNING id""",
-                (child_row.get('email'),child_row['child_key'],child_row['name'],child_row['password_hash'],'member'),
-            ).fetchone()
+        for child_row in conn.execute('SELECT id,family_id,child_key,name,password_hash,email FROM children ORDER BY id').fetchall():
+            family_row = conn.execute('SELECT slug FROM families WHERE id=?', (child_row['family_id'],)).fetchone()
+            if not family_row:
+                continue
             membership = conn.execute(
-                """INSERT INTO family_memberships(family_id,user_id,member_kind,child_id,status)
-                   VALUES(?,?,?,?,?)
-                   ON CONFLICT(family_id,user_id) DO UPDATE SET child_id=excluded.child_id,status='active'
-                   RETURNING id""",
-                (family_id,user['id'],'child',child_row['id'],'active'),
+                'SELECT id,user_id FROM family_memberships WHERE family_id=? AND child_id=?',
+                (child_row['family_id'], child_row['id']),
             ).fetchone()
+            if membership:
+                user = {'id': membership['user_id']}
+                conn.execute(
+                    '''UPDATE users SET display_name=?,email=COALESCE(?,email),
+                              password_hash=COALESCE(password_hash,?),user_type='member',updated_at=CURRENT_TIMESTAMP
+                         WHERE id=?''',
+                    (child_row['name'], child_row.get('email'), child_row['password_hash'], user['id']),
+                )
+                conn.execute(
+                    "UPDATE family_memberships SET login_name=?,status='active' WHERE id=?",
+                    (child_row['child_key'], membership['id']),
+                )
+            else:
+                internal_username = make_internal_username(family_row['slug'], child_row['child_key'])
+                user = conn.execute(
+                    '''INSERT INTO users(email,username,display_name,password_hash,user_type)
+                       VALUES(?,?,?,?,?)
+                       ON CONFLICT(username) DO UPDATE SET
+                           display_name=excluded.display_name,
+                           email=COALESCE(excluded.email,users.email),
+                           password_hash=COALESCE(users.password_hash,excluded.password_hash),
+                           user_type='member'
+                       RETURNING id''',
+                    (child_row.get('email'), internal_username, child_row['name'], child_row['password_hash'], 'member'),
+                ).fetchone()
+                membership = conn.execute(
+                    '''INSERT INTO family_memberships(family_id,user_id,member_kind,child_id,login_name,status)
+                       VALUES(?,?,?,?,?,?)
+                       ON CONFLICT(family_id,user_id) DO UPDATE SET
+                           child_id=excluded.child_id,login_name=excluded.login_name,status='active'
+                       RETURNING id''',
+                    (child_row['family_id'], user['id'], 'child', child_row['id'], child_row['child_key'], 'active'),
+                ).fetchone()
             conn.execute(
-                """INSERT INTO membership_roles(membership_id,role_id)
+                '''INSERT INTO membership_roles(membership_id,role_id)
                    SELECT ?,id FROM roles WHERE role_key='child'
-                   ON CONFLICT DO NOTHING""",
+                   ON CONFLICT DO NOTHING''',
                 (membership['id'],),
             )
         for child in conn.execute('SELECT id FROM children ORDER BY id').fetchall():
@@ -706,3 +918,8 @@ def init_db():
                     cur = conn.execute('INSERT INTO goals(child_id,title,criteria,target_value,bonus_points,sort_order) VALUES(?,?,?,?,?,?)',
                                        (child['id'], title, criteria, target, points, order))
                     conn.execute('INSERT INTO goal_progress(goal_id,current_value) VALUES(?,0)', (cur.lastrowid,))
+
+
+        seed_family_templates_from_live_family(conn, family_id)
+        for other_family in conn.execute('SELECT id FROM families WHERE id<>? ORDER BY id', (family_id,)).fetchall():
+            clone_family_templates(conn, family_id, other_family['id'])

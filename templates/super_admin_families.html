@@ -1,6 +1,30 @@
 {% extends "admin_base.html" %}
-{% block title %}Aile Yönetimi · FamilyHero{% endblock %}
-{% block breadcrumb %}Süper Admin / Aileler{% endblock %}
+{% block title %}Aile Yönetimi · FamilyHero
+<script>
+(function(){
+  const form = document.getElementById('familyListSearchForm');
+  const input = document.getElementById('familyListSearch');
+  let timer;
+  input.addEventListener('input', function(){
+    clearTimeout(timer);
+    timer = setTimeout(function(){ form.submit(); }, 450);
+  });
+})();
+</script>
+{% endblock %}
+{% block breadcrumb %}Süper Admin / Aileler
+<script>
+(function(){
+  const form = document.getElementById('familyListSearchForm');
+  const input = document.getElementById('familyListSearch');
+  let timer;
+  input.addEventListener('input', function(){
+    clearTimeout(timer);
+    timer = setTimeout(function(){ form.submit(); }, 450);
+  });
+})();
+</script>
+{% endblock %}
 {% block content %}
 <div class="admin-page-head super-admin-head">
   <div>
@@ -8,7 +32,7 @@
     <h1>Aile Yönetimi</h1>
     <p>Yeni test ailesi oluşturun ve aile çalışma alanları arasında geçiş yapın.</p>
   </div>
-  <div class="super-admin-count"><strong>{{ families|length }}</strong><span>toplam aile</span></div>
+  <div class="super-admin-count"><strong>{{ total_count }}</strong><span>toplam aile</span></div>
 </div>
 
 <div class="super-admin-layout">
@@ -34,8 +58,8 @@
 
       <div class="form-field">
         <label for="username">Yönetici kullanıcı adı</label>
-        <input id="username" name="username" required minlength="4" maxlength="50" value="{{ form.username }}" placeholder="kaya-ailesi_admin" autocomplete="off">
-        <small class="field-hint">“admin” zaten sizde; her aile için benzersiz olmalı.</small>
+        <input id="username" name="username" required minlength="4" maxlength="50" value="{{ form.username }}" placeholder="admin" autocomplete="off">
+        <small class="field-hint">Aynı kullanıcı adı farklı ailelerde kullanılabilir.</small>
         {% if errors.username %}<small class="field-error">{{ errors.username }}</small>{% endif %}
       </div>
 
@@ -59,8 +83,20 @@
   </section>
 
   <section class="panel-section super-family-list-panel">
-    <div class="panel-head">
-      <div><h2>Kayıtlı aileler</h2><p>Bir aileye geçerek o ailenin yönetim ekranını görüntüleyebilirsiniz.</p></div>
+    <div class="panel-head family-list-head">
+      <div><h2>Kayıtlı aileler</h2><p>Ad, aile kodu, yönetici kullanıcı adı veya e-postayla arayın.</p></div>
+    </div>
+
+    <form method="get" class="family-list-search" id="familyListSearchForm">
+      <label class="sr-only" for="familyListSearch">Aile ara</label>
+      <input id="familyListSearch" name="q" type="search" value="{{ search_query }}"
+             placeholder="Aile adı, kodu, kullanıcı veya e-posta">
+      <button type="submit">Ara</button>
+      {% if search_query %}<a href="{{ url_for('super_admin_families') }}">Temizle</a>{% endif %}
+    </form>
+    <div class="family-search-summary">
+      {% if search_query %}<strong>“{{ search_query }}”</strong> için {{ families|length }} sonuç{% else %}Son eklenen {{ families|length }} aile gösteriliyor{% endif %}
+      {% if families|length >= 50 %}<span>İlk 50 sonuç gösteriliyor; aramayı daraltın.</span>{% endif %}
     </div>
 
     <div class="family-admin-list">
@@ -88,7 +124,7 @@
         </form>
       </article>
       {% else %}
-      <div class="empty-family-list">Henüz aile bulunmuyor.</div>
+      <div class="empty-family-list">{% if search_query %}Arama kriterine uyan aile bulunamadı.{% else %}Henüz aile bulunmuyor.{% endif %}</div>
       {% endfor %}
     </div>
   </section>
@@ -110,7 +146,19 @@
   name.addEventListener('input',()=>{
     const generated = slugify(name.value);
     if(!codeTouched) code.value = generated;
-    if(!usernameTouched) username.value = (generated ? generated + '_admin' : '').slice(0,50);
+    if(!usernameTouched) username.value = generated ? 'admin' : '';
+  });
+})();
+</script>
+
+<script>
+(function(){
+  const form = document.getElementById('familyListSearchForm');
+  const input = document.getElementById('familyListSearch');
+  let timer;
+  input.addEventListener('input', function(){
+    clearTimeout(timer);
+    timer = setTimeout(function(){ form.submit(); }, 450);
   });
 })();
 </script>
