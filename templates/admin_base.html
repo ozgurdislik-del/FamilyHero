@@ -19,4 +19,5 @@
  });
  document.addEventListener('click',function(e){ if(isMobile() && sidebar.classList.contains('open') && !sidebar.contains(e.target) && !button.contains(e.target)) sidebar.classList.remove('open'); });
 })();
-</script></body></html>
+</script><div style="position:fixed;right:8px;bottom:5px;font-size:10px;opacity:.45;z-index:9999">{{ current_family_name or 'FamilyHero' }} · v{{ app_version }}</div>
+</body></html>

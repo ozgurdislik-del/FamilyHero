@@ -203,10 +203,40 @@ def admin_required(view):
     return wrapped
 
 
+def current_family_id():
+    family_id = session.get("family_id")
+    if not family_id:
+        abort(403)
+    return family_id
+
+
+def owned_child(conn, child_id):
+    return conn.execute(
+        "SELECT * FROM children WHERE id=? AND family_id=?",
+        (child_id, current_family_id()),
+    ).fetchone()
+
+
 def current_child():
     with get_db() as conn:
-        return conn.execute("SELECT * FROM children WHERE id=?", (session.get("child_id"),)).fetchone()
+        return conn.execute(
+            "SELECT * FROM children WHERE id=? AND family_id=?",
+            (session.get("child_id"), session.get("family_id")),
+        ).fetchone()
 
+
+
+@app.context_processor
+def inject_release_info():
+    family_name = None
+    if session.get("family_id"):
+        try:
+            with get_db() as conn:
+                row = conn.execute("SELECT name FROM families WHERE id=?", (session["family_id"],)).fetchone()
+                family_name = row["name"] if row else None
+        except Exception:
+            family_name = None
+    return {"app_version": "4.30.0-beta", "current_family_name": family_name}
 
 @app.route("/home")
 def home():
@@ -222,27 +252,39 @@ def home():
 def login():
     if session.get("child_id"):
         return redirect(url_for("dashboard"))
+    family_code = request.values.get("family_code", "default-family").strip().lower()
     with get_db() as conn:
-        children = conn.execute("SELECT child_key,name,avatar_key FROM children ORDER BY id").fetchall()
+        family = conn.execute("SELECT id,name,slug FROM families WHERE slug=? AND status='active'", (family_code,)).fetchone()
+        children = conn.execute(
+            "SELECT child_key,name,avatar_key FROM children WHERE family_id=? ORDER BY id",
+            (family["id"],),
+        ).fetchall() if family else []
     if request.method == "POST":
         key = request.form.get("child_key", "").lower().strip()
         password = request.form.get("password", "")
+        if not family:
+            flash("Aile kodu bulunamadı.", "error")
+            return render_template("login.html", children=[], avatars=AVATARS, family_code=family_code), 401
         with get_db() as conn:
-            child = conn.execute("SELECT * FROM children WHERE child_key=?", (key,)).fetchone()
-        if not child or not check_password_hash(child["password_hash"], password):
+            child = conn.execute(
+                "SELECT * FROM children WHERE child_key=? AND family_id=?",
+                (key, family["id"]),
+            ).fetchone()
+        if not child or not child["password_hash"] or not check_password_hash(child["password_hash"], password):
             audit_event("auth.login.failed", "child", key)
-            flash("İsim veya şifre hatalı.", "error")
-            return render_template("login.html", children=children, avatars=AVATARS), 401
+            flash("İsim, aile kodu veya şifre hatalı.", "error")
+            return render_template("login.html", children=children, avatars=AVATARS, family_code=family_code), 401
         session.clear()
         session.permanent = True
-        session.update(child_id=child["id"], child_name=child["name"])
+        session.update(child_id=child["id"], child_name=child["name"], family_id=family["id"])
         if not establish_identity_session(child["child_key"], child_id=child["id"]):
             app.logger.error("Çocuk kimlik köprüsü bulunamadı: %s", child["child_key"])
             session.clear()
             abort(500)
+        session["family_id"] = family["id"]
         audit_event("auth.login.success", "child", child["id"])
         return redirect(url_for("dashboard"))
-    return render_template("login.html", children=children, avatars=AVATARS)
+    return render_template("login.html", children=children, avatars=AVATARS, family_code=family_code)
 
 
 @app.post("/logout")
@@ -288,9 +330,9 @@ def dashboard():
         ).fetchone()
         poll = conn.execute(
             """SELECT * FROM family_polls
-               WHERE poll_date=? AND active=1
+               WHERE poll_date=? AND active=1 AND family_id=?
                ORDER BY id DESC LIMIT 1""",
-            (today,),
+            (today, child["family_id"]),
         ).fetchone()
         poll_options = []
         child_vote_option_id = None
@@ -320,9 +362,10 @@ def dashboard():
                FROM children c
                LEFT JOIN tasks t ON t.child_id=c.id AND t.active=1
                LEFT JOIN completions cp ON cp.task_id=t.id AND cp.completion_date=?
+               WHERE c.family_id=?
                GROUP BY c.id,c.name,c.avatar_key
                ORDER BY today_score DESC,c.name""",
-            (today,),
+            (today, child["family_id"]),
         ).fetchall()
     task_count=len(tasks); done_count=sum(1 for t in tasks if t["done"])
     completion_percent=round(done_count*100/task_count) if task_count else 0
@@ -549,21 +592,71 @@ def admin_login():
         username = request.form.get("username", "").strip().lower()
         password = request.form.get("password", "")
         with get_db() as conn:
-            admin = conn.execute("SELECT * FROM admins WHERE username=?", (username,)).fetchone()
-        if not admin or not check_password_hash(admin["password_hash"], password):
+            admin = conn.execute(
+                """SELECT u.id,u.username,u.password_hash,fm.family_id
+                     FROM users u
+                     JOIN family_memberships fm ON fm.user_id=u.id AND fm.status='active'
+                     JOIN membership_roles mr ON mr.membership_id=fm.id
+                     JOIN roles r ON r.id=mr.role_id
+                    WHERE u.username=? AND u.active=1
+                      AND r.role_key IN ('platform_admin','family_owner','family_admin','parent')
+                    ORDER BY CASE WHEN r.role_key='family_owner' THEN 0 ELSE 1 END
+                    LIMIT 1""",
+                (username,),
+            ).fetchone()
+        if not admin or not admin["password_hash"] or not check_password_hash(admin["password_hash"], password):
             audit_event("auth.login.failed", "admin", username)
-            flash("Admin kullanıcı adı veya şifre hatalı.", "error")
+            flash("Yönetici kullanıcı adı veya şifre hatalı.", "error")
             return render_template("admin_login.html"), 401
         session.clear()
         session.permanent = True
-        session.update(admin_id=admin["id"], admin_name=admin["username"])
-        if not establish_identity_session(admin["username"], admin_id=admin["id"]):
-            app.logger.error("Admin kimlik köprüsü bulunamadı: %s", admin["username"])
-            session.clear()
-            abort(500)
+        session.update(admin_id=admin["id"], admin_name=admin["username"], user_id=admin["id"], family_id=admin["family_id"])
         audit_event("auth.login.success", "admin", admin["id"])
         return redirect(url_for("admin_panel"))
     return render_template("admin_login.html")
+
+
+@app.route("/register-family", methods=["GET", "POST"])
+@limiter.limit("5 per hour", methods=["POST"])
+def register_family():
+    if request.method == "POST":
+        family_name = request.form.get("family_name", "").strip()[:100]
+        family_code = request.form.get("family_code", "").strip().lower()[:40]
+        username = request.form.get("username", "").strip().lower()[:50]
+        email = request.form.get("email", "").strip().lower()[:150] or None
+        password = request.form.get("password", "")
+        if not family_name or not re.fullmatch(r"[a-z0-9-]{4,40}", family_code):
+            flash("Aile adı ve en az 4 karakterlik aile kodu gereklidir.", "error")
+        elif not re.fullmatch(r"[a-z0-9_.-]{4,50}", username):
+            flash("Kullanıcı adı en az 4 karakter olmalı; küçük harf, rakam, nokta, - ve _ içerebilir.", "error")
+        elif len(password) < 10:
+            flash("Şifre en az 10 karakter olmalıdır.", "error")
+        else:
+            try:
+                with get_db() as conn:
+                    user = conn.execute(
+                        "INSERT INTO users(email,username,display_name,password_hash,user_type) VALUES(?,?,?,?,?) RETURNING id",
+                        (email, username, username, generate_password_hash(password), "member"),
+                    ).fetchone()
+                    family = conn.execute(
+                        "INSERT INTO families(name,slug,created_by_user_id) VALUES(?,?,?) RETURNING id",
+                        (family_name, family_code, user["id"]),
+                    ).fetchone()
+                    membership = conn.execute(
+                        "INSERT INTO family_memberships(family_id,user_id,member_kind,status) VALUES(?,?,?,?) RETURNING id",
+                        (family["id"], user["id"], "adult", "active"),
+                    ).fetchone()
+                    conn.execute(
+                        """INSERT INTO membership_roles(membership_id,role_id)
+                           SELECT ?,id FROM roles WHERE role_key='family_owner'""",
+                        (membership["id"],),
+                    )
+                flash("Aileniz oluşturuldu. Yönetici girişi yapabilirsiniz.", "success")
+                return redirect(url_for("admin_login"))
+            except Exception as exc:
+                app.logger.warning("Aile kaydı başarısız: %s", exc)
+                flash("Aile kodu, kullanıcı adı veya e-posta daha önce kullanılmış olabilir.", "error")
+    return render_template("register_family.html")
 
 
 @app.post("/admin/logout")
@@ -582,7 +675,9 @@ def admin_panel():
                FROM children c
                LEFT JOIN tasks t ON t.child_id=c.id AND t.active=1
                LEFT JOIN completions cp ON cp.task_id=t.id
-               GROUP BY c.id ORDER BY c.id"""
+               WHERE c.family_id=?
+               GROUP BY c.id ORDER BY c.id""",
+            (current_family_id(),),
         ).fetchall()
     return render_template("admin.html", children=children, avatars=AVATARS)
 
@@ -591,7 +686,7 @@ def admin_panel():
 @permission_required("member.manage")
 def admin_child_profile(child_id):
     with get_db() as conn:
-        child = conn.execute("SELECT * FROM children WHERE id=?", (child_id,)).fetchone()
+        child = owned_child(conn, child_id)
         if not child:
             abort(404)
         if request.method == "POST":
@@ -624,7 +719,7 @@ def admin_child_profile(child_id):
                     return redirect(url_for("admin_child_profile", child_id=child_id))
                 except Exception:
                     flash("Bilgiler kaydedilemedi. E-posta başka bir profilde kullanılıyor olabilir.", "error")
-        child = conn.execute("SELECT * FROM children WHERE id=?", (child_id,)).fetchone()
+        child = owned_child(conn, child_id)
         task_count = conn.execute("SELECT COUNT(*) FROM tasks WHERE child_id=? AND active=1", (child_id,)).fetchone()[0]
         total_score = conn.execute("SELECT COALESCE(SUM(t.points),0) FROM completions cp JOIN tasks t ON t.id=cp.task_id WHERE t.child_id=?", (child_id,)).fetchone()[0]
     return render_template("admin_child_profile.html", child=child, avatars=AVATARS, task_count=task_count, total_score=total_score)
@@ -634,7 +729,7 @@ def admin_child_profile(child_id):
 @permission_required("member.manage")
 def admin_send_password_reset(child_id):
     with get_db() as conn:
-        child = conn.execute("SELECT id,name,email FROM children WHERE id=?", (child_id,)).fetchone()
+        child = conn.execute("SELECT id,name,email FROM children WHERE id=? AND family_id=?", (child_id, current_family_id())).fetchone()
     if not child:
         abort(404)
     if not child["email"]:
@@ -680,8 +775,8 @@ def admin_add_child():
     try:
         with get_db() as conn:
             cur = conn.execute(
-                "INSERT INTO children(child_key,name,email,title,password_hash,avatar_key,birth_date,favorite_team,school) VALUES(?,?,?,?,?,?,?,?,?)",
-                (child_key, name, email, title, generate_password_hash(password), avatar_key, birth_date, favorite_team, school),
+                "INSERT INTO children(family_id,child_key,name,email,title,password_hash,avatar_key,birth_date,favorite_team,school) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                (current_family_id(), child_key, name, email, title, generate_password_hash(password), avatar_key, birth_date, favorite_team, school),
             )
             new_child_id = cur.lastrowid
             if template_key in SEED_DATA:
@@ -692,7 +787,7 @@ def admin_add_child():
                     (new_child_id, goal_title, criteria, target, bonus, order),
                 )
                 conn.execute("INSERT INTO goal_progress(goal_id,current_value) VALUES(?,0)", (goal_cur.lastrowid,))
-            family = conn.execute("SELECT id FROM families WHERE slug='default-family'").fetchone()
+            family = {"id": current_family_id()}
             password_hash = conn.execute("SELECT password_hash FROM children WHERE id=?", (new_child_id,)).fetchone()[0]
             user = conn.execute(
                 """INSERT INTO users(email,username,display_name,password_hash,user_type)
@@ -732,34 +827,37 @@ def admin_statistics():
     date_labels = [start_day + timedelta(days=i) for i in range(days)]
 
     with get_db() as conn:
-        children = conn.execute("SELECT id,name,avatar_key FROM children ORDER BY id").fetchall()
+        children = conn.execute("SELECT id,name,avatar_key FROM children WHERE family_id=? ORDER BY id", (current_family_id(),)).fetchall()
         active_tasks = conn.execute(
             """SELECT child_id,COUNT(*) task_count,COALESCE(SUM(points),0) possible_daily
-               FROM tasks WHERE active=1 GROUP BY child_id"""
+               FROM tasks t JOIN children c ON c.id=t.child_id WHERE t.active=1 AND c.family_id=? GROUP BY child_id""",
+            (current_family_id(),)
         ).fetchall()
         daily_rows = conn.execute(
             """SELECT t.child_id,cp.completion_date,COUNT(*) completed_count,COALESCE(SUM(t.points),0) score
                FROM completions cp JOIN tasks t ON t.id=cp.task_id
-               WHERE cp.completion_date BETWEEN ? AND ?
+               JOIN children c ON c.id=t.child_id
+               WHERE cp.completion_date BETWEEN ? AND ? AND c.family_id=?
                GROUP BY t.child_id,cp.completion_date
                ORDER BY cp.completion_date""",
-            (start_day.isoformat(), end_day.isoformat()),
+            (start_day.isoformat(), end_day.isoformat(), current_family_id()),
         ).fetchall()
         category_rows = conn.execute(
             """SELECT t.category,COUNT(*) completed_count,COALESCE(SUM(t.points),0) score
                FROM completions cp JOIN tasks t ON t.id=cp.task_id
-               WHERE cp.completion_date BETWEEN ? AND ?
+               JOIN children c ON c.id=t.child_id
+               WHERE cp.completion_date BETWEEN ? AND ? AND c.family_id=?
                GROUP BY t.category ORDER BY score DESC,t.category""",
-            (start_day.isoformat(), end_day.isoformat()),
+            (start_day.isoformat(), end_day.isoformat(), current_family_id()),
         ).fetchall()
         missed_rows = conn.execute(
             """SELECT c.name child_name,t.description,t.category,COUNT(cp.id) completed_count
                FROM tasks t JOIN children c ON c.id=t.child_id
                LEFT JOIN completions cp ON cp.task_id=t.id AND cp.completion_date BETWEEN ? AND ?
-               WHERE t.active=1
+               WHERE t.active=1 AND c.family_id=?
                GROUP BY c.name,t.id,t.description,t.category
                ORDER BY completed_count ASC,c.name,t.description LIMIT 8""",
-            (start_day.isoformat(), end_day.isoformat()),
+            (start_day.isoformat(), end_day.isoformat(), current_family_id()),
         ).fetchall()
 
     task_map={row["child_id"]:dict(row) for row in active_tasks}
@@ -822,11 +920,11 @@ def admin_report():
         selected_date = date.today().isoformat()
 
     with get_db() as conn:
-        children = conn.execute("SELECT * FROM children ORDER BY name").fetchall()
+        children = conn.execute("SELECT * FROM children WHERE family_id=? ORDER BY name", (current_family_id(),)).fetchall()
         selected_child_id = request.args.get("child_id", type=int)
         if not selected_child_id and children:
             selected_child_id = children[0]["id"]
-        child = conn.execute("SELECT * FROM children WHERE id=?", (selected_child_id,)).fetchone() if selected_child_id else None
+        child = conn.execute("SELECT * FROM children WHERE id=? AND family_id=?", (selected_child_id, current_family_id())).fetchone() if selected_child_id else None
         report = None
         if child:
             completions = conn.execute(
@@ -894,7 +992,7 @@ def admin_grant_reward():
     except ValueError:
         grant_date = date.today().isoformat()
     with get_db() as conn:
-        child = conn.execute("SELECT id,name FROM children WHERE id=?", (child_id,)).fetchone()
+        child = conn.execute("SELECT id,name FROM children WHERE id=? AND family_id=?", (child_id, current_family_id())).fetchone()
         if not child:
             abort(404)
         if reward_id:
@@ -938,7 +1036,8 @@ def admin_delete_grant(grant_id):
     selected_date = request.form.get("date", date.today().isoformat())
     child_id = request.form.get("child_id", type=int)
     with get_db() as conn:
-        conn.execute("DELETE FROM reward_grants WHERE id=?", (grant_id,))
+        if not owned_child(conn, child_id): abort(404)
+        conn.execute("DELETE FROM reward_grants WHERE id=? AND child_id=?", (grant_id, child_id))
     flash("Ödül kaydı silindi.", "success")
     return redirect(url_for("admin_report", date=selected_date, child_id=child_id))
 
@@ -971,8 +1070,8 @@ def admin_polls():
 
         with get_db() as conn:
             existing = conn.execute(
-                "SELECT p.*,COUNT(v.id) vote_count FROM family_polls p LEFT JOIN family_poll_votes v ON v.poll_id=p.id WHERE p.id=? GROUP BY p.id,p.title,p.description,p.poll_date,p.active,p.created_at,p.updated_at",
-                (poll_id,),
+                "SELECT p.*,COUNT(v.id) vote_count FROM family_polls p LEFT JOIN family_poll_votes v ON v.poll_id=p.id WHERE p.id=? AND p.family_id=? GROUP BY p.id,p.family_id,p.title,p.description,p.poll_date,p.active,p.created_at,p.updated_at",
+                (poll_id, current_family_id()),
             ).fetchone() if poll_id else None
 
             if not title:
@@ -1000,10 +1099,10 @@ def admin_polls():
                 flash("Oylama güncellendi.", "success")
                 return redirect(url_for("admin_polls"))
             else:
-                conn.execute("UPDATE family_polls SET active=0,updated_at=CURRENT_TIMESTAMP WHERE poll_date=?", (poll_date,))
+                conn.execute("UPDATE family_polls SET active=0,updated_at=CURRENT_TIMESTAMP WHERE poll_date=? AND family_id=?", (poll_date, current_family_id()))
                 cur = conn.execute(
-                    "INSERT INTO family_polls(title,description,poll_date) VALUES(?,?,?)",
-                    (title, description, poll_date),
+                    "INSERT INTO family_polls(family_id,title,description,poll_date) VALUES(?,?,?,?)",
+                    (current_family_id(), title, description, poll_date),
                 )
                 for order, (emoji, text) in enumerate(options):
                     conn.execute(
@@ -1019,8 +1118,10 @@ def admin_polls():
                FROM family_polls p
                LEFT JOIN family_poll_options o ON o.poll_id=p.id
                LEFT JOIN family_poll_votes v ON v.poll_id=p.id
-               GROUP BY p.id,p.title,p.description,p.poll_date,p.active,p.created_at,p.updated_at
-               ORDER BY p.poll_date DESC,p.id DESC LIMIT 30"""
+               WHERE p.family_id=?
+               GROUP BY p.id,p.family_id,p.title,p.description,p.poll_date,p.active,p.created_at,p.updated_at
+               ORDER BY p.poll_date DESC,p.id DESC LIMIT 30""",
+            (current_family_id(),)
         ).fetchall()
         poll_details = {}
         poll_voters = {}
@@ -1043,7 +1144,7 @@ def admin_polls():
         builder_mode = "new"
         source_id = edit_id or copy_id
         if source_id:
-            builder_poll = conn.execute("SELECT * FROM family_polls WHERE id=?", (source_id,)).fetchone()
+            builder_poll = conn.execute("SELECT * FROM family_polls WHERE id=? AND family_id=?", (source_id, current_family_id())).fetchone()
             if builder_poll:
                 builder_options = conn.execute(
                     "SELECT * FROM family_poll_options WHERE poll_id=? ORDER BY sort_order,id",
@@ -1061,7 +1162,7 @@ def admin_polls():
 @permission_required("poll.manage")
 def admin_poll_toggle(poll_id):
     with get_db() as conn:
-        poll = conn.execute("SELECT active FROM family_polls WHERE id=?", (poll_id,)).fetchone()
+        poll = conn.execute("SELECT active FROM family_polls WHERE id=? AND family_id=?", (poll_id, current_family_id())).fetchone()
         if poll:
             conn.execute("UPDATE family_polls SET active=?,updated_at=CURRENT_TIMESTAMP WHERE id=?", (0 if poll["active"] else 1, poll_id))
     return redirect(url_for("admin_polls"))
@@ -1071,7 +1172,7 @@ def admin_poll_toggle(poll_id):
 @permission_required("poll.manage")
 def admin_poll_delete(poll_id):
     with get_db() as conn:
-        conn.execute("DELETE FROM family_polls WHERE id=?", (poll_id,))
+        conn.execute("DELETE FROM family_polls WHERE id=? AND family_id=?", (poll_id, current_family_id()))
     flash("Oylama silindi.", "success")
     return redirect(url_for("admin_polls"))
 
@@ -1080,9 +1181,9 @@ def admin_poll_delete(poll_id):
 @permission_required("family.view")
 def admin_config():
     with get_db() as conn:
-        children = conn.execute("SELECT * FROM children ORDER BY name").fetchall()
+        children = conn.execute("SELECT * FROM children WHERE family_id=? ORDER BY name", (current_family_id(),)).fetchall()
         child_id = request.args.get("child_id", type=int) or (children[0]["id"] if children else None)
-        child = conn.execute("SELECT * FROM children WHERE id=?", (child_id,)).fetchone() if child_id else None
+        child = owned_child(conn, child_id) if child_id else None
         tasks = conn.execute("SELECT * FROM tasks WHERE child_id=? ORDER BY category,sort_order,id", (child_id,)).fetchall() if child else []
         rewards = conn.execute("SELECT * FROM rewards WHERE child_id=? ORDER BY required_points,id", (child_id,)).fetchall() if child else []
         goals = conn.execute("""SELECT g.*,COALESCE(gp.current_value,0) current_value,gp.completed_date,COALESCE(gp.note,'') progress_note
@@ -1100,6 +1201,7 @@ def admin_task_add():
     description=request.form.get("description","").strip(); points=max(0,request.form.get("points",type=int) or 0)
     if child_id and category and description:
         with get_db() as conn:
+            if not owned_child(conn, child_id): abort(404)
             order=conn.execute("SELECT COALESCE(MAX(sort_order),-1)+1 FROM tasks WHERE child_id=?",(child_id,)).fetchone()[0]
             conn.execute("INSERT INTO tasks(child_id,category,description,points,sort_order) VALUES(?,?,?,?,?)",(child_id,category,description,points,order))
         flash("Görev eklendi.","success")
@@ -1112,7 +1214,9 @@ def admin_task_add():
 def admin_task_edit(task_id):
     child_id=request.form.get("child_id",type=int); category=request.form.get("category","").strip(); description=request.form.get("description","").strip()
     points=max(0,request.form.get("points",type=int) or 0); active=1 if request.form.get("active") else 0
-    with get_db() as conn: conn.execute("UPDATE tasks SET category=?,description=?,points=?,active=? WHERE id=? AND child_id=?",(category,description,points,active,task_id,child_id))
+    with get_db() as conn:
+        if not owned_child(conn, child_id): abort(404)
+        conn.execute("UPDATE tasks SET category=?,description=?,points=?,active=? WHERE id=? AND child_id=?",(category,description,points,active,task_id,child_id))
     flash("Görev güncellendi.","success"); return redirect(url_for("admin_config",child_id=child_id))
 
 
@@ -1121,7 +1225,9 @@ def admin_task_edit(task_id):
 def admin_category_rename():
     child_id=request.form.get("child_id",type=int); old=request.form.get("old_category",""); new=request.form.get("new_category","").strip()
     if new:
-        with get_db() as conn: conn.execute("UPDATE tasks SET category=? WHERE child_id=? AND category=?",(new,child_id,old))
+        with get_db() as conn:
+            if not owned_child(conn, child_id): abort(404)
+            conn.execute("UPDATE tasks SET category=? WHERE child_id=? AND category=?",(new,child_id,old))
         flash("Görev grubu yeniden adlandırıldı.","success")
     return redirect(url_for("admin_config",child_id=child_id))
 
@@ -1132,6 +1238,7 @@ def admin_reward_add():
     child_id=request.form.get("child_id",type=int); desc=request.form.get("description","").strip(); pts=max(0,request.form.get("required_points",type=int) or 0)
     if desc:
         with get_db() as conn:
+            if not owned_child(conn, child_id): abort(404)
             order=conn.execute("SELECT COALESCE(MAX(sort_order),-1)+1 FROM rewards WHERE child_id=?",(child_id,)).fetchone()[0]
             conn.execute("INSERT INTO rewards(child_id,required_points,description,sort_order) VALUES(?,?,?,?)",(child_id,pts,desc,order))
         flash("Ödül eklendi.","success")
@@ -1142,7 +1249,9 @@ def admin_reward_add():
 @permission_required("reward.manage")
 def admin_reward_edit(reward_id):
     child_id=request.form.get("child_id",type=int); desc=request.form.get("description","").strip(); pts=max(0,request.form.get("required_points",type=int) or 0)
-    with get_db() as conn: conn.execute("UPDATE rewards SET description=?,required_points=? WHERE id=? AND child_id=?",(desc,pts,reward_id,child_id))
+    with get_db() as conn:
+        if not owned_child(conn, child_id): abort(404)
+        conn.execute("UPDATE rewards SET description=?,required_points=? WHERE id=? AND child_id=?",(desc,pts,reward_id,child_id))
     flash("Ödül güncellendi.","success"); return redirect(url_for("admin_config",child_id=child_id))
 
 
@@ -1150,7 +1259,9 @@ def admin_reward_edit(reward_id):
 @permission_required("reward.manage")
 def admin_reward_delete(reward_id):
     child_id=request.form.get("child_id",type=int)
-    with get_db() as conn: conn.execute("DELETE FROM rewards WHERE id=? AND child_id=?",(reward_id,child_id))
+    with get_db() as conn:
+        if not owned_child(conn, child_id): abort(404)
+        conn.execute("DELETE FROM rewards WHERE id=? AND child_id=?",(reward_id,child_id))
     flash("Ödül silindi.","success"); return redirect(url_for("admin_config",child_id=child_id))
 
 
@@ -1161,6 +1272,7 @@ def admin_goal_add():
     target=max(1,request.form.get("target_value",type=int) or 1); bonus=max(0,request.form.get("bonus_points",type=int) or 0)
     if title:
         with get_db() as conn:
+            if not owned_child(conn, child_id): abort(404)
             order=conn.execute("SELECT COALESCE(MAX(sort_order),-1)+1 FROM goals WHERE child_id=?",(child_id,)).fetchone()[0]
             cur=conn.execute("INSERT INTO goals(child_id,title,criteria,target_value,bonus_points,sort_order) VALUES(?,?,?,?,?,?)",(child_id,title,criteria,target,bonus,order))
             conn.execute("INSERT INTO goal_progress(goal_id,current_value) VALUES(?,0)",(cur.lastrowid,))
@@ -1173,7 +1285,9 @@ def admin_goal_add():
 def admin_goal_edit(goal_id):
     child_id=request.form.get("child_id",type=int); title=request.form.get("title","").strip(); criteria=request.form.get("criteria","").strip()
     target=max(1,request.form.get("target_value",type=int) or 1); bonus=max(0,request.form.get("bonus_points",type=int) or 0); active=1 if request.form.get("active") else 0
-    with get_db() as conn: conn.execute("UPDATE goals SET title=?,criteria=?,target_value=?,bonus_points=?,active=? WHERE id=? AND child_id=?",(title,criteria,target,bonus,active,goal_id,child_id))
+    with get_db() as conn:
+        if not owned_child(conn, child_id): abort(404)
+        conn.execute("UPDATE goals SET title=?,criteria=?,target_value=?,bonus_points=?,active=? WHERE id=? AND child_id=?",(title,criteria,target,bonus,active,goal_id,child_id))
     flash("Hedef güncellendi.","success"); return redirect(url_for("admin_config",child_id=child_id))
 
 
@@ -1183,6 +1297,7 @@ def admin_goal_progress(goal_id):
     child_id=request.form.get("child_id",type=int); value=max(0,request.form.get("current_value",type=int) or 0); note=request.form.get("note","").strip()[:250]
     completed=request.form.get("completed_date","").strip() or None
     with get_db() as conn:
+        if not owned_child(conn, child_id): abort(404)
         goal=conn.execute("SELECT target_value FROM goals WHERE id=? AND child_id=?",(goal_id,child_id)).fetchone()
         if not goal: abort(404)
         if value >= goal["target_value"] and not completed: completed=date.today().isoformat()
@@ -1196,7 +1311,9 @@ def admin_goal_progress(goal_id):
 @permission_required("goal.manage")
 def admin_goal_delete(goal_id):
     child_id=request.form.get("child_id",type=int)
-    with get_db() as conn: conn.execute("DELETE FROM goals WHERE id=? AND child_id=?",(goal_id,child_id))
+    with get_db() as conn:
+        if not owned_child(conn, child_id): abort(404)
+        conn.execute("DELETE FROM goals WHERE id=? AND child_id=?",(goal_id,child_id))
     flash("Hedef silindi.","success"); return redirect(url_for("admin_config",child_id=child_id))
 
 

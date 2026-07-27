@@ -260,7 +260,7 @@ def copy_template(conn, child_id, template_key):
 def sync_seed_child(conn, child_key, child):
     row = conn.execute('SELECT * FROM children WHERE child_key=?', (child_key,)).fetchone()
     if not row:
-        cur = conn.execute('INSERT INTO children(child_key,name,title,password_hash,avatar_key) VALUES(?,?,?,?,?)',
+        cur = conn.execute("INSERT INTO children(family_id,child_key,name,title,password_hash,avatar_key) VALUES((SELECT id FROM families WHERE slug='default-family'),?,?,?,?,?)",
                            (child_key, child['name'], child['title'], generate_password_hash(_seed_password(f"FAMILYHERO_CHILD_{child_key.upper()}_PASSWORD", f"'{child_key}' çocuk hesabı")), child['avatar']))
         copy_template(conn, cur.lastrowid, child_key)
         return
@@ -364,6 +364,7 @@ def init_db():
         conn.executescript("""
         CREATE TABLE IF NOT EXISTS children (
             id BIGSERIAL PRIMARY KEY,
+            family_id BIGINT,
             child_key TEXT NOT NULL UNIQUE,
             name TEXT NOT NULL,
             email TEXT UNIQUE,
@@ -435,6 +436,7 @@ def init_db():
         );
         CREATE TABLE IF NOT EXISTS family_polls (
             id BIGSERIAL PRIMARY KEY,
+            family_id BIGINT,
             title TEXT NOT NULL,
             description TEXT NOT NULL DEFAULT '',
             poll_date DATE NOT NULL,
@@ -547,6 +549,8 @@ def init_db():
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
         """)
+        conn.execute('ALTER TABLE children ADD COLUMN IF NOT EXISTS family_id BIGINT')
+        conn.execute('ALTER TABLE family_polls ADD COLUMN IF NOT EXISTS family_id BIGINT')
         conn.execute('ALTER TABLE children ADD COLUMN IF NOT EXISTS email TEXT')
         conn.execute('ALTER TABLE children ADD COLUMN IF NOT EXISTS birth_date DATE')
         conn.execute("ALTER TABLE children ADD COLUMN IF NOT EXISTS favorite_team TEXT NOT NULL DEFAULT ''")
@@ -573,6 +577,10 @@ def init_db():
             ('FamilyHero Ailesi','default-family'),
         ).fetchone()
         family_id = family['id']
+        conn.execute('UPDATE children SET family_id=? WHERE family_id IS NULL', (family_id,))
+        conn.execute('UPDATE family_polls SET family_id=? WHERE family_id IS NULL', (family_id,))
+        conn.execute('CREATE INDEX IF NOT EXISTS children_family_idx ON children(family_id)')
+        conn.execute('CREATE INDEX IF NOT EXISTS polls_family_idx ON family_polls(family_id)')
 
         roles = [
             ('platform_admin','Platform Yöneticisi','platform',1),

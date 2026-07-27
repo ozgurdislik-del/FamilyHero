@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Yeni Aile Oluştur · FamilyHero{% endblock %}
+{% block content %}
+<div class="login-card">
+  <h1>Yeni aile oluştur</h1>
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>Aile adı</label><input name="family_name" required maxlength="100">
+    <label>Aile kodu</label><input name="family_code" required minlength="4" maxlength="40" placeholder="ornek-aile">
+    <label>Yönetici kullanıcı adı</label><input name="username" required minlength="4" maxlength="50">
+    <label>E-posta</label><input type="email" name="email">
+    <label>Şifre</label><input type="password" name="password" required minlength="10">
+    <button type="submit">Aileyi oluştur</button>
+  </form>
+  <p><a href="{{ url_for('admin_login') }}">Yönetici girişine dön</a></p>
+</div>
+{% endblock %}
