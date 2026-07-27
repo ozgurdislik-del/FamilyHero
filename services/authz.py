@@ -10,27 +10,58 @@ def _identity_row():
     family_id = session.get("family_id")
     if not user_id:
         return None
+
     with get_db() as conn:
-        return conn.execute(
+        user = conn.execute(
             """
-            SELECT u.id AS user_id, u.username, u.display_name, u.user_type,
-                   fm.id AS membership_id, fm.family_id, fm.member_kind
-              FROM users u
-              LEFT JOIN family_memberships fm
-                ON fm.user_id=u.id AND fm.status='active'
-             WHERE u.id=? AND u.active=1
-               AND (? IS NULL OR fm.family_id=? OR fm.family_id IS NULL)
-             ORDER BY fm.id NULLS LAST
-             LIMIT 1
+            SELECT id AS user_id, username, display_name, user_type
+              FROM users
+             WHERE id=? AND active=1
             """,
-            (user_id, family_id, family_id),
+            (user_id,),
         ).fetchone()
+        if not user:
+            return None
+
+        membership = None
+        if family_id:
+            membership = conn.execute(
+                """
+                SELECT id AS membership_id, family_id, member_kind
+                  FROM family_memberships
+                 WHERE user_id=? AND family_id=? AND status='active'
+                 LIMIT 1
+                """,
+                (user_id, family_id),
+            ).fetchone()
+
+    identity = dict(user)
+    identity.update(
+        {
+            "membership_id": membership["membership_id"] if membership else None,
+            "family_id": membership["family_id"] if membership else family_id,
+            "member_kind": membership["member_kind"] if membership else None,
+        }
+    )
+    return identity
+
+
+def is_platform_admin():
+    identity = _identity_row()
+    return bool(identity and identity.get("user_type") == "platform_admin")
 
 
 def current_permissions():
     identity = _identity_row()
     if not identity:
         return set()
+
+    if identity.get("user_type") == "platform_admin":
+        return {"*"}
+
+    if not identity.get("membership_id"):
+        return set()
+
     with get_db() as conn:
         rows = conn.execute(
             """
@@ -38,16 +69,11 @@ def current_permissions():
               FROM permissions p
               JOIN role_permissions rp ON rp.permission_id=p.id
               JOIN membership_roles mr ON mr.role_id=rp.role_id
-              JOIN family_memberships fm ON fm.id=mr.membership_id
-             WHERE fm.user_id=? AND fm.status='active'
-               AND (? IS NULL OR fm.family_id=?)
+             WHERE mr.membership_id=?
             """,
-            (identity["user_id"], identity.get("family_id"), identity.get("family_id")),
+            (identity["membership_id"],),
         ).fetchall()
-        permissions = {row["permission_key"] for row in rows}
-        if identity.get("user_type") == "platform_admin":
-            permissions.add("*")
-        return permissions
+    return {row["permission_key"] for row in rows}
 
 
 def can(permission_key):
@@ -68,6 +94,18 @@ def permission_required(permission_key, login_endpoint="admin_login"):
         return wrapped
 
     return decorator
+
+
+def platform_admin_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not session.get("user_id"):
+            return redirect(url_for("admin_login"))
+        if not is_platform_admin():
+            abort(403)
+        return view(*args, **kwargs)
+
+    return wrapped
 
 
 def establish_identity_session(username, *, child_id=None, admin_id=None):

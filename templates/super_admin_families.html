@@ -1,0 +1,117 @@
+{% extends "admin_base.html" %}
+{% block title %}Aile Yönetimi · FamilyHero{% endblock %}
+{% block breadcrumb %}Süper Admin / Aileler{% endblock %}
+{% block content %}
+<div class="admin-page-head super-admin-head">
+  <div>
+    <span class="eyebrow">PLATFORM YÖNETİMİ</span>
+    <h1>Aile Yönetimi</h1>
+    <p>Yeni test ailesi oluşturun ve aile çalışma alanları arasında geçiş yapın.</p>
+  </div>
+  <div class="super-admin-count"><strong>{{ families|length }}</strong><span>toplam aile</span></div>
+</div>
+
+<div class="super-admin-layout">
+  <section class="panel-section super-create-panel">
+    <div class="panel-head">
+      <div><h2>Yeni aile oluştur</h2><p>Aile sahibi hesabı aynı anda oluşturulur.</p></div>
+    </div>
+    <form method="post" class="super-family-form" novalidate>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <div class="form-field form-field-wide">
+        <label for="family_name">Aile adı</label>
+        <input id="family_name" name="family_name" required maxlength="100" value="{{ form.family_name }}" placeholder="Kaya Ailesi">
+        {% if errors.family_name %}<small class="field-error">{{ errors.family_name }}</small>{% endif %}
+      </div>
+
+      <div class="form-field">
+        <label for="family_code">Aile kodu</label>
+        <input id="family_code" name="family_code" required minlength="4" maxlength="40" value="{{ form.family_code }}" placeholder="kaya-ailesi" autocomplete="off">
+        <small class="field-hint">Çocuklar girişte bu kodu kullanır.</small>
+        {% if errors.family_code %}<small class="field-error">{{ errors.family_code }}</small>{% endif %}
+      </div>
+
+      <div class="form-field">
+        <label for="username">Yönetici kullanıcı adı</label>
+        <input id="username" name="username" required minlength="4" maxlength="50" value="{{ form.username }}" placeholder="kaya-ailesi_admin" autocomplete="off">
+        <small class="field-hint">“admin” zaten sizde; her aile için benzersiz olmalı.</small>
+        {% if errors.username %}<small class="field-error">{{ errors.username }}</small>{% endif %}
+      </div>
+
+      <div class="form-field">
+        <label for="email">Yönetici e-postası <span class="optional-label">isteğe bağlı</span></label>
+        <input id="email" type="email" name="email" value="{{ form.email }}" autocomplete="off">
+        {% if errors.email %}<small class="field-error">{{ errors.email }}</small>{% endif %}
+      </div>
+
+      <div class="form-field">
+        <label for="password">Geçici şifre</label>
+        <input id="password" type="password" name="password" required minlength="10" autocomplete="new-password">
+        <small class="field-hint">En az 10 karakter.</small>
+        {% if errors.password %}<small class="field-error">{{ errors.password }}</small>{% endif %}
+      </div>
+
+      <div class="form-actions form-field-wide">
+        <button class="primary-action" type="submit">＋ Aileyi oluştur</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="panel-section super-family-list-panel">
+    <div class="panel-head">
+      <div><h2>Kayıtlı aileler</h2><p>Bir aileye geçerek o ailenin yönetim ekranını görüntüleyebilirsiniz.</p></div>
+    </div>
+
+    <div class="family-admin-list">
+      {% for family in families %}
+      <article class="family-admin-card {% if family.id == selected_family_id %}is-current{% endif %}">
+        <div class="family-admin-icon">{{ family.name[:1]|upper }}</div>
+        <div class="family-admin-info">
+          <div class="family-admin-title">
+            <strong>{{ family.name }}</strong>
+            {% if family.id == selected_family_id %}<span class="current-family-badge">Aktif çalışma alanı</span>{% endif %}
+          </div>
+          <code>{{ family.slug }}</code>
+          <div class="family-admin-meta">
+            <span>👤 {{ family.owner_username or 'Sahip atanmamış' }}</span>
+            <span>🧑 {{ family.adult_count }} yetişkin</span>
+            <span>🧒 {{ family.child_count }} çocuk</span>
+          </div>
+          {% if family.owner_email %}<small>{{ family.owner_email }}</small>{% endif %}
+        </div>
+        <form method="post" action="{{ url_for('super_admin_switch_family', family_id=family.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="switch-family-button" {% if family.id == selected_family_id %}disabled{% endif %}>
+            {% if family.id == selected_family_id %}Seçili{% else %}Aileye geç{% endif %}
+          </button>
+        </form>
+      </article>
+      {% else %}
+      <div class="empty-family-list">Henüz aile bulunmuyor.</div>
+      {% endfor %}
+    </div>
+  </section>
+</div>
+
+<script>
+(function(){
+  const name = document.getElementById('family_name');
+  const code = document.getElementById('family_code');
+  const username = document.getElementById('username');
+  let codeTouched = Boolean(code.value);
+  let usernameTouched = Boolean(username.value);
+  const slugify = (value) => value.toLocaleLowerCase('tr-TR')
+    .replaceAll('ı','i').replaceAll('ğ','g').replaceAll('ü','u')
+    .replaceAll('ş','s').replaceAll('ö','o').replaceAll('ç','c')
+    .replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,40);
+  code.addEventListener('input',()=>{ codeTouched=true; });
+  username.addEventListener('input',()=>{ usernameTouched=true; });
+  name.addEventListener('input',()=>{
+    const generated = slugify(name.value);
+    if(!codeTouched) code.value = generated;
+    if(!usernameTouched) username.value = (generated ? generated + '_admin' : '').slice(0,50);
+  });
+})();
+</script>
+{% endblock %}

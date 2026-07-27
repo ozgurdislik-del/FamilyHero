@@ -640,6 +640,10 @@ def init_db():
                RETURNING id""",
             (family_id,admin_user['id'],'adult','active'),
         ).fetchone()
+        conn.execute(
+            "UPDATE families SET created_by_user_id=COALESCE(created_by_user_id,?) WHERE id=?",
+            (admin_user['id'], family_id),
+        )
 
         for role_key in ('platform_admin','family_owner'):
             conn.execute(

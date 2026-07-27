@@ -1,10 +1,89 @@
 <!doctype html>
-<html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{% block title %}FamilyHero Yönetim{% endblock %}</title><link rel="stylesheet" href="{{ url_for('static',filename='style.css') }}?v=490"></head>
-<body class="admin-body"><div class="admin-layout" id="adminLayout">
-<aside class="sidebar" id="sidebar"><a class="sidebar-logo" href="{{ url_for('admin_panel') }}"><span>F</span><div><strong>FamilyHero</strong><small>Yönetim Merkezi</small></div></a>
-<nav><p>ÇALIŞMA ALANI</p><a class="{% if request.endpoint=='admin_panel' %}active{% endif %}" href="{{ url_for('admin_panel') }}"><i>⌂</i><span>Genel Bakış</span></a><div class="nav-group"><span>AİLE</span><a href="{{ url_for('admin_panel') }}#children"><i>◉</i><span>Çocuk Profilleri</span></a><a href="{{ url_for('admin_panel') }}#add-child"><i>＋</i><span>Yeni Çocuk</span></a></div><div class="nav-group"><span>AİLE MERKEZİ</span><a class="{% if request.endpoint in ['admin_polls','admin_poll_toggle','admin_poll_delete'] %}active{% endif %}" href="{{ url_for('admin_polls') }}"><i>◉</i><span>Aile Oylamaları</span></a></div><div class="nav-group"><span>TAKİP</span><a class="{% if request.endpoint=='admin_report' %}active{% endif %}" href="{{ url_for('admin_report') }}"><i>▥</i><span>Çocuk Raporu</span></a><a class="{% if request.endpoint=='admin_statistics' %}active{% endif %}" href="{{ url_for('admin_statistics') }}"><i>◫</i><span>Aile Analitiği</span></a></div><div class="nav-group"><span>YAPILANDIRMA</span><a class="{% if request.endpoint=='admin_config' %}active{% endif %}" href="{{ url_for('admin_config') }}#tasks"><i>✓</i><span>Görevler</span></a><a href="{{ url_for('admin_config') }}#rewards"><i>◇</i><span>Ödüller</span></a><a href="{{ url_for('admin_config') }}#goals"><i>☆</i><span>Hedefler</span></a></div></nav>
-<div class="sidebar-account"><div class="account-dot">A</div><div><strong>Yönetici</strong><small>admin</small></div><form method="post" action="{{ url_for('admin_logout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button title="Çıkış">↗</button></form></div></aside>
-<div class="workspace"><header class="topbar"><div class="topbar-left"><button class="menu-btn" id="sidebarToggle" type="button" aria-label="Menüyü aç veya gizle">☰</button><div><small>FamilyHero</small><strong>{% block breadcrumb %}Yönetim{% endblock %}</strong></div></div><a href="{{ url_for('admin_panel') }}">Ana panel</a></header><main class="admin-content">{% for category,message in get_flashed_messages(with_categories=true) %}<div class="flash {{ category }}">{{ message }}</div>{% endfor %}{% block content %}{% endblock %}</main></div></div>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{% block title %}FamilyHero Yönetim{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static',filename='style.css') }}?v=431">
+</head>
+<body class="admin-body">
+<div class="admin-layout" id="adminLayout">
+  <aside class="sidebar" id="sidebar">
+    <a class="sidebar-logo" href="{{ url_for('admin_panel') }}">
+      <span>F</span>
+      <div><strong>FamilyHero</strong><small>Yönetim Merkezi</small></div>
+    </a>
+
+    <nav>
+      {% if is_platform_admin %}
+      <div class="nav-group platform-nav-group">
+        <span>PLATFORM</span>
+        <a class="{% if request.endpoint in ['super_admin_families','super_admin_switch_family'] %}active{% endif %}" href="{{ url_for('super_admin_families') }}">
+          <i>◆</i><span>Aile Yönetimi</span>
+        </a>
+      </div>
+      {% endif %}
+
+      <p>ÇALIŞMA ALANI</p>
+      <a class="{% if request.endpoint=='admin_panel' %}active{% endif %}" href="{{ url_for('admin_panel') }}"><i>⌂</i><span>Genel Bakış</span></a>
+
+      <div class="nav-group">
+        <span>AİLE</span>
+        <a href="{{ url_for('admin_panel') }}#children"><i>◉</i><span>Çocuk Profilleri</span></a>
+        <a href="{{ url_for('admin_panel') }}#add-child"><i>＋</i><span>Yeni Çocuk</span></a>
+      </div>
+
+      <div class="nav-group">
+        <span>AİLE MERKEZİ</span>
+        <a class="{% if request.endpoint in ['admin_polls','admin_poll_toggle','admin_poll_delete'] %}active{% endif %}" href="{{ url_for('admin_polls') }}"><i>◉</i><span>Aile Oylamaları</span></a>
+      </div>
+
+      <div class="nav-group">
+        <span>TAKİP</span>
+        <a class="{% if request.endpoint=='admin_report' %}active{% endif %}" href="{{ url_for('admin_report') }}"><i>▥</i><span>Çocuk Raporu</span></a>
+        <a class="{% if request.endpoint=='admin_statistics' %}active{% endif %}" href="{{ url_for('admin_statistics') }}"><i>◫</i><span>Aile Analitiği</span></a>
+      </div>
+
+      <div class="nav-group">
+        <span>YAPILANDIRMA</span>
+        <a class="{% if request.endpoint=='admin_config' %}active{% endif %}" href="{{ url_for('admin_config') }}#tasks"><i>✓</i><span>Görevler</span></a>
+        <a href="{{ url_for('admin_config') }}#rewards"><i>◇</i><span>Ödüller</span></a>
+        <a href="{{ url_for('admin_config') }}#goals"><i>☆</i><span>Hedefler</span></a>
+      </div>
+    </nav>
+
+    <div class="sidebar-account">
+      <div class="account-dot">{{ current_admin_name[:1]|upper }}</div>
+      <div>
+        <strong>{{ current_admin_name }}</strong>
+        <small>{{ current_family_name or 'Aile seçilmedi' }}</small>
+      </div>
+      <form method="post" action="{{ url_for('admin_logout') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button title="Çıkış">↗</button>
+      </form>
+    </div>
+  </aside>
+
+  <div class="workspace">
+    <header class="topbar">
+      <div class="topbar-left">
+        <button class="menu-btn" id="sidebarToggle" type="button" aria-label="Menüyü aç veya gizle">☰</button>
+        <div><small>{{ current_family_name or 'FamilyHero' }}</small><strong>{% block breadcrumb %}Yönetim{% endblock %}</strong></div>
+      </div>
+      <div class="topbar-actions">
+        {% if is_platform_admin %}<a href="{{ url_for('super_admin_families') }}">Aile Yönetimi</a>{% endif %}
+        <a href="{{ url_for('admin_panel') }}">Ana panel</a>
+      </div>
+    </header>
+
+    <main class="admin-content">
+      {% for category,message in get_flashed_messages(with_categories=true) %}<div class="flash {{ category }}">{{ message }}</div>{% endfor %}
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
+
 <script>
 (function(){
  const layout=document.getElementById('adminLayout');
@@ -19,5 +98,7 @@
  });
  document.addEventListener('click',function(e){ if(isMobile() && sidebar.classList.contains('open') && !sidebar.contains(e.target) && !button.contains(e.target)) sidebar.classList.remove('open'); });
 })();
-</script><div style="position:fixed;right:8px;bottom:5px;font-size:10px;opacity:.45;z-index:9999">{{ current_family_name or 'FamilyHero' }} · v{{ app_version }}</div>
-</body></html>
+</script>
+<div style="position:fixed;right:8px;bottom:5px;font-size:10px;opacity:.45;z-index:9999">{{ current_family_name or 'FamilyHero' }} · v{{ app_version }}</div>
+</body>
+</html>

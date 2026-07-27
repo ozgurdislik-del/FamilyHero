@@ -17,7 +17,7 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from database import AVATARS, GOAL_SEEDS, SEED_DATA, copy_template, get_db, init_db
 from config import Config
-from services.authz import establish_identity_session, permission_required
+from services.authz import establish_identity_session, is_platform_admin, permission_required, platform_admin_required
 from services.audit import audit_event
 
 app = Flask(__name__)
@@ -225,6 +225,71 @@ def current_child():
         ).fetchone()
 
 
+def normalize_family_code(value):
+    value = (value or "").strip().lower()
+    value = re.sub(r"[^a-z0-9-]+", "-", value)
+    value = re.sub(r"-+", "-", value).strip("-")
+    return value[:40]
+
+
+def create_family_owner(*, family_name, family_code, username, email, password):
+    family_name = (family_name or "").strip()[:100]
+    family_code = normalize_family_code(family_code)
+    username = (username or "").strip().lower()[:50]
+    email = (email or "").strip().lower()[:150] or None
+    password = password or ""
+
+    errors = {}
+    if not family_name:
+        errors["family_name"] = "Aile adı zorunludur."
+    if not re.fullmatch(r"[a-z0-9-]{4,40}", family_code):
+        errors["family_code"] = "Aile kodu en az 4 karakter olmalı; küçük harf, rakam ve - içerebilir."
+    if not re.fullmatch(r"[a-z0-9_.-]{4,50}", username):
+        errors["username"] = "Kullanıcı adı en az 4 karakter olmalı; küçük harf, rakam, nokta, - ve _ içerebilir."
+    if len(password) < 10:
+        errors["password"] = "Şifre en az 10 karakter olmalıdır."
+
+    if errors:
+        return None, errors
+
+    with get_db() as conn:
+        if conn.execute("SELECT 1 FROM families WHERE LOWER(slug)=LOWER(?)", (family_code,)).fetchone():
+            errors["family_code"] = "Bu aile kodu zaten kullanılıyor."
+        if conn.execute("SELECT 1 FROM users WHERE LOWER(username)=LOWER(?)", (username,)).fetchone():
+            errors["username"] = "Bu kullanıcı adı zaten kullanılıyor. Örn: ailekodu_admin"
+        if email and conn.execute("SELECT 1 FROM users WHERE LOWER(email)=LOWER(?)", (email,)).fetchone():
+            errors["email"] = "Bu e-posta adresi zaten kullanılıyor."
+        if errors:
+            return None, errors
+
+        user = conn.execute(
+            """INSERT INTO users(email,username,display_name,password_hash,user_type)
+               VALUES(?,?,?,?,?) RETURNING id""",
+            (email, username, family_name + " Yöneticisi", generate_password_hash(password), "member"),
+        ).fetchone()
+        family = conn.execute(
+            "INSERT INTO families(name,slug,created_by_user_id) VALUES(?,?,?) RETURNING id",
+            (family_name, family_code, user["id"]),
+        ).fetchone()
+        membership = conn.execute(
+            """INSERT INTO family_memberships(family_id,user_id,member_kind,status)
+               VALUES(?,?,?,?) RETURNING id""",
+            (family["id"], user["id"], "adult", "active"),
+        ).fetchone()
+        conn.execute(
+            """INSERT INTO membership_roles(membership_id,role_id)
+               SELECT ?,id FROM roles WHERE role_key='family_owner'""",
+            (membership["id"],),
+        )
+
+    return {
+        "family_id": family["id"],
+        "family_name": family_name,
+        "family_code": family_code,
+        "username": username,
+        "email": email,
+    }, {}
+
 
 @app.context_processor
 def inject_release_info():
@@ -236,7 +301,12 @@ def inject_release_info():
                 family_name = row["name"] if row else None
         except Exception:
             family_name = None
-    return {"app_version": "4.30.0-beta", "current_family_name": family_name}
+    return {
+        "app_version": "4.31.0-beta",
+        "current_family_name": family_name,
+        "is_platform_admin": is_platform_admin(),
+        "current_admin_name": session.get("admin_name", "Yönetici"),
+    }
 
 @app.route("/home")
 def home():
@@ -619,44 +689,99 @@ def admin_login():
 @app.route("/register-family", methods=["GET", "POST"])
 @limiter.limit("5 per hour", methods=["POST"])
 def register_family():
+    if session.get("admin_id") and is_platform_admin():
+        return redirect(url_for("super_admin_families"))
+
+    form = {
+        "family_name": request.form.get("family_name", ""),
+        "family_code": request.form.get("family_code", ""),
+        "username": request.form.get("username", ""),
+        "email": request.form.get("email", ""),
+    }
+    errors = {}
     if request.method == "POST":
-        family_name = request.form.get("family_name", "").strip()[:100]
-        family_code = request.form.get("family_code", "").strip().lower()[:40]
-        username = request.form.get("username", "").strip().lower()[:50]
-        email = request.form.get("email", "").strip().lower()[:150] or None
-        password = request.form.get("password", "")
-        if not family_name or not re.fullmatch(r"[a-z0-9-]{4,40}", family_code):
-            flash("Aile adı ve en az 4 karakterlik aile kodu gereklidir.", "error")
-        elif not re.fullmatch(r"[a-z0-9_.-]{4,50}", username):
-            flash("Kullanıcı adı en az 4 karakter olmalı; küçük harf, rakam, nokta, - ve _ içerebilir.", "error")
-        elif len(password) < 10:
-            flash("Şifre en az 10 karakter olmalıdır.", "error")
-        else:
-            try:
-                with get_db() as conn:
-                    user = conn.execute(
-                        "INSERT INTO users(email,username,display_name,password_hash,user_type) VALUES(?,?,?,?,?) RETURNING id",
-                        (email, username, username, generate_password_hash(password), "member"),
-                    ).fetchone()
-                    family = conn.execute(
-                        "INSERT INTO families(name,slug,created_by_user_id) VALUES(?,?,?) RETURNING id",
-                        (family_name, family_code, user["id"]),
-                    ).fetchone()
-                    membership = conn.execute(
-                        "INSERT INTO family_memberships(family_id,user_id,member_kind,status) VALUES(?,?,?,?) RETURNING id",
-                        (family["id"], user["id"], "adult", "active"),
-                    ).fetchone()
-                    conn.execute(
-                        """INSERT INTO membership_roles(membership_id,role_id)
-                           SELECT ?,id FROM roles WHERE role_key='family_owner'""",
-                        (membership["id"],),
-                    )
-                flash("Aileniz oluşturuldu. Yönetici girişi yapabilirsiniz.", "success")
-                return redirect(url_for("admin_login"))
-            except Exception as exc:
-                app.logger.warning("Aile kaydı başarısız: %s", exc)
-                flash("Aile kodu, kullanıcı adı veya e-posta daha önce kullanılmış olabilir.", "error")
-    return render_template("register_family.html")
+        created, errors = create_family_owner(
+            family_name=form["family_name"],
+            family_code=form["family_code"],
+            username=form["username"],
+            email=form["email"],
+            password=request.form.get("password", ""),
+        )
+        if created:
+            audit_event("platform.family.created.public", "family", created["family_id"], after=created)
+            flash("Aileniz oluşturuldu. Yönetici girişi yapabilirsiniz.", "success")
+            return redirect(url_for("admin_login"))
+
+    return render_template("register_family.html", form=form, errors=errors)
+
+
+@app.route("/super-admin/families", methods=["GET", "POST"])
+@platform_admin_required
+def super_admin_families():
+    form = {
+        "family_name": request.form.get("family_name", ""),
+        "family_code": request.form.get("family_code", ""),
+        "username": request.form.get("username", ""),
+        "email": request.form.get("email", ""),
+    }
+    errors = {}
+
+    if request.method == "POST":
+        created, errors = create_family_owner(
+            family_name=form["family_name"],
+            family_code=form["family_code"],
+            username=form["username"],
+            email=form["email"],
+            password=request.form.get("password", ""),
+        )
+        if created:
+            audit_event("platform.family.created", "family", created["family_id"], after=created)
+            flash(f"{created['family_name']} oluşturuldu. Yönetici: {created['username']}", "success")
+            return redirect(url_for("super_admin_families"))
+
+    with get_db() as conn:
+        families = conn.execute(
+            """
+            SELECT f.id,f.name,f.slug,f.status,f.created_at,
+                   owner.username AS owner_username,owner.email AS owner_email,
+                   COUNT(DISTINCT CASE WHEN fm.member_kind='adult' THEN fm.id END) AS adult_count,
+                   COUNT(DISTINCT c.id) AS child_count
+              FROM families f
+              LEFT JOIN users owner ON owner.id=f.created_by_user_id
+              LEFT JOIN family_memberships fm ON fm.family_id=f.id AND fm.status='active'
+              LEFT JOIN children c ON c.family_id=f.id
+             GROUP BY f.id,f.name,f.slug,f.status,f.created_at,owner.username,owner.email
+             ORDER BY f.created_at DESC,f.id DESC
+            """
+        ).fetchall()
+
+    return render_template(
+        "super_admin_families.html",
+        families=families,
+        form=form,
+        errors=errors,
+        selected_family_id=session.get("family_id"),
+    )
+
+
+@app.post("/super-admin/families/<int:family_id>/switch")
+@platform_admin_required
+def super_admin_switch_family(family_id):
+    with get_db() as conn:
+        family = conn.execute(
+            "SELECT id,name,slug,status FROM families WHERE id=?",
+            (family_id,),
+        ).fetchone()
+    if not family:
+        abort(404)
+    if family["status"] != "active":
+        flash("Pasif bir aileye geçilemez.", "error")
+        return redirect(url_for("super_admin_families"))
+
+    session["family_id"] = family["id"]
+    audit_event("platform.family.switched", "family", family["id"])
+    flash(f"{family['name']} çalışma alanına geçildi.", "success")
+    return redirect(url_for("admin_panel"))
 
 
 @app.post("/admin/logout")
