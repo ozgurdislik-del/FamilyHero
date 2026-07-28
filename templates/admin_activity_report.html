@@ -1,0 +1,120 @@
+{% extends 'admin_base.html' %}
+{% block title %}Kullanım Raporu | FamilyHero{% endblock %}
+{% block breadcrumb %}Süper Admin / Kullanım Raporu{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <span class="eyebrow">PLATFORM RAPORLAMA</span>
+    <h1>Kullanım ve oturum raporu</h1>
+    <p>Kullanıcı bazında giriş-çıkış zamanları, kalınan süre ve en çok kullanılan sayfalar.</p>
+  </div>
+</section>
+
+<div class="kpi-row">
+  <div><span>Aktif aile</span><strong>{{ active_families }}</strong></div>
+  <div><span>Aktif ebeveyn/yönetici</span><strong>{{ active_adult_users }}</strong></div>
+  <div><span>Aktif çocuk hesabı</span><strong>{{ active_children }}</strong></div>
+</div>
+
+<form method="get" class="filter-bar card">
+  <label><span>Aralık</span>
+    <select name="days">
+      <option value="1" {% if days==1 %}selected{% endif %}>Bugün</option>
+      <option value="7" {% if days==7 %}selected{% endif %}>Son 7 gün</option>
+      <option value="30" {% if days==30 %}selected{% endif %}>Son 30 gün</option>
+    </select>
+  </label>
+  <label><span>Aile</span>
+    <select name="family_id">
+      <option value="">Tüm aileler</option>
+      {% for f in families %}<option value="{{ f.id }}" {% if family_filter==f.id %}selected{% endif %}>{{ f.name }}</option>{% endfor %}
+    </select>
+  </label>
+  <button class="btn btn-primary">Raporu görüntüle</button>
+</form>
+
+<section class="card">
+  <div class="section-head">
+    <div><h2>Kullanıcı bazında oturum özeti</h2><p>Günlük ilk görülme, son görülme, kalınan süre ve en çok ziyaret edilen sayfa.</p></div>
+    <span class="count-badge">{{ sessions|length }}</span>
+  </div>
+  <div class="table-scroll">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Tarih</th><th>Kullanıcı</th><th>Tür</th><th>Aile</th>
+          <th>İlk görülme</th><th>Son görülme</th><th>Kalınan süre</th>
+          <th>Sayfa görüntüleme</th><th>En çok kullanılan sayfa</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in sessions %}
+        <tr>
+          <td>{{ s.activity_day }}</td>
+          <td>{{ s.username or '—' }}</td>
+          <td>{{ 'Süper Admin/Ebeveyn' if s.actor_type=='admin' else 'Çocuk' }}</td>
+          <td>{{ s.family_name or '—' }}</td>
+          <td>{{ s.first_seen.strftime('%H:%M') if s.first_seen else '—' }}</td>
+          <td>{{ s.last_seen.strftime('%H:%M') if s.last_seen else '—' }}</td>
+          <td>{{ s.duration_minutes }} dk</td>
+          <td>{{ s.page_view_count }}</td>
+          <td>{{ s.top_endpoint or '—' }}{% if s.top_endpoint_hits %} ({{ s.top_endpoint_hits }}){% endif %}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="9"><div class="empty-state"><strong>Kayıt yok</strong><span>Seçilen aralıkta henüz sayfa görüntüleme kaydı bulunmuyor.</span></div></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="field-hint">Süre, ilgili gün içindeki ilk ve son sayfa görüntüleme arasındaki farktır; tarayıcı kapatılıp çıkış yapılmazsa yaklaşık bir değerdir.</p>
+</section>
+
+<section class="card">
+  <div class="section-head">
+    <div><h2>Giriş / çıkış olayları</h2><p>Başarılı giriş ve çıkış kayıtları.</p></div>
+    <span class="count-badge">{{ login_events|length }}</span>
+  </div>
+  <div class="table-scroll">
+    <table class="data-table">
+      <thead><tr><th>Zaman</th><th>Olay</th><th>Aile</th><th>IP</th></tr></thead>
+      <tbody>
+        {% for e in login_events %}
+        <tr>
+          <td>{{ e.created_at.strftime('%d.%m.%Y %H:%M') if e.created_at else '—' }}</td>
+          <td>{{ 'Giriş' if e.action_key=='auth.login.success' else 'Çıkış' }} ({{ e.entity_type }})</td>
+          <td>{{ e.family_name or '—' }}</td>
+          <td>{{ e.request_ip or '—' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4"><div class="empty-state"><strong>Kayıt yok</strong><span>Seçilen aralıkta giriş/çıkış olayı bulunmuyor.</span></div></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="card">
+  <div class="section-head">
+    <div><h2>Hatalı / başarısız giriş denemeleri</h2><p>Son {{ days }} gün içindeki başarısız giriş kayıtları.</p></div>
+    <span class="count-badge">{{ failed_logins|length }}</span>
+  </div>
+  <div class="table-scroll">
+    <table class="data-table">
+      <thead><tr><th>Zaman</th><th>Kapsam</th><th>Denenen kullanıcı adı</th><th>Aile</th><th>IP</th></tr></thead>
+      <tbody>
+        {% for f in failed_logins %}
+        <tr>
+          <td>{{ f.created_at.strftime('%d.%m.%Y %H:%M') if f.created_at else '—' }}</td>
+          <td>{{ f.scope }}</td>
+          <td>{{ f.attempted_username }}</td>
+          <td>{{ f.family_name or '—' }}</td>
+          <td>{{ f.request_ip or '—' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5"><div class="empty-state"><strong>Kayıt yok</strong><span>Seçilen aralıkta başarısız giriş denemesi bulunmuyor.</span></div></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

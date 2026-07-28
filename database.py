@@ -721,7 +721,21 @@ def init_db():
             comment_text TEXT NOT NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
+        CREATE TABLE IF NOT EXISTS activity_page_views (
+            id BIGSERIAL PRIMARY KEY,
+            family_id BIGINT REFERENCES families(id) ON DELETE SET NULL,
+            user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+            child_id BIGINT REFERENCES children(id) ON DELETE SET NULL,
+            actor_type TEXT NOT NULL,
+            username TEXT,
+            endpoint TEXT,
+            path TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
         """)
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_activity_page_views_lookup ON activity_page_views(family_id, user_id, child_id, created_at)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_activity_page_views_created_at ON activity_page_views(created_at)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_audit_logs_action_created ON audit_logs(action_key, created_at)')
         conn.execute('ALTER TABLE children ADD COLUMN IF NOT EXISTS family_id BIGINT')
         conn.execute('ALTER TABLE family_polls ADD COLUMN IF NOT EXISTS family_id BIGINT')
         conn.execute('ALTER TABLE children ADD COLUMN IF NOT EXISTS email TEXT')

@@ -77,11 +77,11 @@
           {% if item.done %}
           <div class="fh-completed-row">
             <span><b>✓ Tamamlandı</b> · {{ item.points }} XP kazanıldı</span>
-            <form method="post" action="{{ url_for('undo_task',task_id=item.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="completion_date" value="{{ selected_date }}"><button class="fh-link-button" {% if not editable %}disabled{% endif %}>Geri al</button></form>
+            <form method="post" class="js-task-form" action="{{ url_for('undo_task',task_id=item.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="completion_date" value="{{ selected_date }}"><button class="fh-link-button" {% if not editable %}disabled{% endif %}>Geri al</button></form>
           </div>
           {% endif %}
 
-          <form class="fh-task-action {% if item.done %}fh-task-action-done{% endif %} js-note-form" method="post" action="{{ url_for('save_task',task_id=item.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <form class="fh-task-action {% if item.done %}fh-task-action-done{% endif %} js-note-form js-task-form" method="post" action="{{ url_for('save_task',task_id=item.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="completion_date" value="{{ selected_date }}">
             {% if item.done %}
               <div class="fh-note-summary js-note-display" {% if not item.note %}hidden{% endif %}>
@@ -106,6 +106,24 @@
 {% endfor %}
 </section>
 <script>
+(function () {
+  // Görev tamamlama/geri alma formu normal bir POST + yönlendirme yaptığı için
+  // tarayıcı sayfayı yeniden yükler ve varsayılan olarak en başa kaydırır.
+  // Kaydırma konumunu gönderim öncesi saklayıp, sayfa yeniden yüklendiğinde
+  // geri yükleyerek kullanıcının kaldığı yerde kalmasını sağlıyoruz.
+  var SCROLL_KEY = 'fh_scroll_' + window.location.pathname;
+  var savedScroll = sessionStorage.getItem(SCROLL_KEY);
+  if (savedScroll !== null) {
+    window.scrollTo(0, parseInt(savedScroll, 10) || 0);
+    sessionStorage.removeItem(SCROLL_KEY);
+  }
+  document.querySelectorAll('.js-task-form').forEach(function (form) {
+    form.addEventListener('submit', function () {
+      sessionStorage.setItem(SCROLL_KEY, window.scrollY);
+    });
+  });
+})();
+
 document.addEventListener('DOMContentLoaded', function () {
   document.querySelectorAll('.js-note-form').forEach(function (form) {
     const toggle = form.querySelector('.js-note-toggle');

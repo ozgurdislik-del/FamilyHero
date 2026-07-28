@@ -310,6 +310,48 @@ def create_family_owner(*, family_name, family_code, username, email, password):
     }, {}
 
 
+_PAGE_VIEW_SKIP_ENDPOINTS = {
+    "static", "login", "admin_login", "logout", "admin_logout",
+    "forgot_password", "reset_password", "register_family",
+}
+
+
+@app.after_request
+def log_page_view(response):
+    """Süper admin aktivite raporu için sayfa görüntülemelerini sessiz biçimde kaydeder.
+
+    Bu kayıt en iyi çaba (best-effort) ile yapılır: herhangi bir hata kullanıcı
+    isteğini asla etkilememelidir.
+    """
+    try:
+        if request.method != "GET":
+            return response
+        endpoint = request.endpoint
+        if not endpoint or endpoint in _PAGE_VIEW_SKIP_ENDPOINTS:
+            return response
+        if not (session.get("admin_id") or session.get("child_id")):
+            return response
+        actor_type = "admin" if session.get("admin_id") else "child"
+        username = session.get("admin_name") if actor_type == "admin" else session.get("child_name")
+        with get_db() as conn:
+            conn.execute(
+                """INSERT INTO activity_page_views(family_id,user_id,child_id,actor_type,username,endpoint,path)
+                   VALUES(?,?,?,?,?,?,?)""",
+                (
+                    session.get("family_id"),
+                    session.get("user_id"),
+                    session.get("child_id"),
+                    actor_type,
+                    username,
+                    endpoint,
+                    request.path,
+                ),
+            )
+    except Exception:
+        app.logger.exception("Sayfa görüntüleme kaydı yazılamadı.")
+    return response
+
+
 @app.context_processor
 def inject_release_info():
     family_name = None
@@ -458,6 +500,10 @@ def login():
 
 @app.post("/logout")
 def logout():
+    if session.get("child_id"):
+        audit_event("auth.logout", "child", session.get("child_id"))
+    elif session.get("admin_id"):
+        audit_event("auth.logout", "admin", session.get("admin_id"))
     session.clear()
     return redirect(url_for("login"))
 
@@ -792,7 +838,10 @@ def admin_login():
             and check_password_hash(user["password_hash"], password)
         )
         if not valid:
-            audit_event("auth.admin_login.failed", "user", user["id"] if user else None)
+            audit_event(
+                "auth.admin_login.failed", "user", user["id"] if user else None,
+                before={"username": username},
+            )
             flash("Kullanıcı adı veya şifre hatalı.", "error")
             return render_template("admin_login.html", username=username), 401
 
@@ -929,8 +978,140 @@ def super_admin_switch_family(family_id):
     return redirect(url_for("admin_panel"))
 
 
+@app.route("/super-admin/activity-report")
+@platform_admin_required
+def super_admin_activity_report():
+    days = request.args.get("days", default=7, type=int)
+    if days not in (1, 7, 30):
+        days = 7
+    family_filter = request.args.get("family_id", type=int)
+    since = istanbul_now() - timedelta(days=days)
+
+    with get_db() as conn:
+        active_families = conn.execute(
+            "SELECT COUNT(*) FROM families WHERE status='active'"
+        ).fetchone()[0]
+        active_adult_users = conn.execute(
+            """SELECT COUNT(DISTINCT fm.user_id) FROM family_memberships fm
+                 JOIN users u ON u.id=fm.user_id
+                WHERE fm.status='active' AND fm.member_kind='adult' AND u.active=1"""
+        ).fetchone()[0]
+        active_children = conn.execute(
+            """SELECT COUNT(DISTINCT fm.child_id) FROM family_memberships fm
+                WHERE fm.status='active' AND fm.member_kind='child' AND fm.child_id IS NOT NULL"""
+        ).fetchone()[0]
+
+        families = conn.execute("SELECT id,name FROM families ORDER BY name").fetchall()
+
+        family_clause = "AND family_id=?" if family_filter else ""
+        params = [since]
+        if family_filter:
+            params.append(family_filter)
+
+        # Kullanıcı bazında: ilk/son görülme, kalınan süre ve en çok kullanılan sayfa
+        sessions_rows = conn.execute(
+            f"""
+            WITH scoped AS (
+                SELECT family_id, user_id, child_id, actor_type, username, endpoint, created_at,
+                       created_at::date AS activity_day
+                  FROM activity_page_views
+                 WHERE created_at >= ? {family_clause}
+            ),
+            per_day AS (
+                SELECT family_id, user_id, child_id, actor_type,
+                       MAX(username) AS username,
+                       activity_day,
+                       MIN(created_at) AS first_seen,
+                       MAX(created_at) AS last_seen,
+                       COUNT(*) AS page_view_count
+                  FROM scoped
+                 GROUP BY family_id, user_id, child_id, actor_type, activity_day
+            ),
+            top_page AS (
+                SELECT family_id, user_id, child_id, activity_day, endpoint,
+                       COUNT(*) AS hits,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY family_id, user_id, child_id, activity_day
+                           ORDER BY COUNT(*) DESC
+                       ) AS rn
+                  FROM scoped
+                 GROUP BY family_id, user_id, child_id, activity_day, endpoint
+            )
+            SELECT pd.*, f.name AS family_name, tp.endpoint AS top_endpoint, tp.hits AS top_endpoint_hits
+              FROM per_day pd
+              LEFT JOIN families f ON f.id = pd.family_id
+              LEFT JOIN top_page tp ON tp.family_id IS NOT DISTINCT FROM pd.family_id
+                    AND tp.user_id IS NOT DISTINCT FROM pd.user_id
+                    AND tp.child_id IS NOT DISTINCT FROM pd.child_id
+                    AND tp.activity_day = pd.activity_day AND tp.rn = 1
+             ORDER BY pd.activity_day DESC, pd.last_seen DESC
+             LIMIT 300
+            """,
+            tuple(params),
+        ).fetchall()
+
+        login_events = conn.execute(
+            f"""SELECT al.action_key, al.entity_type, al.entity_id, al.family_id, al.request_ip, al.created_at,
+                       f.name AS family_name
+                  FROM audit_logs al
+                  LEFT JOIN families f ON f.id = al.family_id
+                 WHERE al.action_key IN ('auth.login.success','auth.logout')
+                   AND al.created_at >= ? {family_clause}
+                 ORDER BY al.created_at DESC LIMIT 200""",
+            tuple(params),
+        ).fetchall()
+
+        failed_logins = conn.execute(
+            """SELECT al.action_key, al.entity_type, al.entity_id, al.before_data,
+                      al.family_id, al.request_ip, al.created_at, f.name AS family_name
+                 FROM audit_logs al
+                 LEFT JOIN families f ON f.id = al.family_id
+                WHERE al.action_key IN ('auth.login.failed','auth.admin_login.failed')
+                  AND al.created_at >= ?
+                ORDER BY al.created_at DESC LIMIT 200""",
+            (since,),
+        ).fetchall()
+
+    sessions = []
+    for row in sessions_rows:
+        item = dict(row)
+        first_seen = item["first_seen"]
+        last_seen = item["last_seen"]
+        duration = (last_seen - first_seen) if (first_seen and last_seen) else None
+        item["duration_minutes"] = round(duration.total_seconds() / 60) if duration else 0
+        sessions.append(item)
+
+    failed = []
+    for row in failed_logins:
+        item = dict(row)
+        attempted_username = item["entity_id"]
+        if not attempted_username and item["before_data"]:
+            try:
+                attempted_username = json.loads(item["before_data"]).get("username")
+            except Exception:
+                attempted_username = None
+        item["attempted_username"] = attempted_username or "—"
+        item["scope"] = "Süper Admin" if item["action_key"] == "auth.admin_login.failed" else "Aile Girişi"
+        failed.append(item)
+
+    return render_template(
+        "admin_activity_report.html",
+        days=days,
+        families=families,
+        family_filter=family_filter,
+        active_families=active_families,
+        active_adult_users=active_adult_users,
+        active_children=active_children,
+        sessions=sessions,
+        login_events=login_events,
+        failed_logins=failed,
+    )
+
+
 @app.post("/admin/logout")
 def admin_logout():
+    if session.get("admin_id"):
+        audit_event("auth.logout", "admin", session.get("admin_id"))
     session.clear()
     return redirect(url_for("admin_login"))
 

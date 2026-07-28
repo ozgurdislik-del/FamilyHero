@@ -21,6 +21,9 @@
         <a class="{% if request.endpoint in ['super_admin_families','super_admin_switch_family'] %}active{% endif %}" href="{{ url_for('super_admin_families') }}">
           <i>◆</i><span>Aile Yönetimi</span>
         </a>
+        <a class="{% if request.endpoint=='super_admin_activity_report' %}active{% endif %}" href="{{ url_for('super_admin_activity_report') }}">
+          <i>⏱</i><span>Kullanım Raporu</span>
+        </a>
       </div>
       {% endif %}
 
