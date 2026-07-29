@@ -964,3 +964,5 @@ svg {
 .status-badge{display:inline-block;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:800}
 .status-badge.active{background:#eaf7f0;color:var(--success)}
 .status-badge.passive{background:#fdeef0;color:var(--danger)}
+.btn.danger{background:#fff0f2;color:var(--danger)}
+.form-actions{gap:10px;flex-wrap:wrap}

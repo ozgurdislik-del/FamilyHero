@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}{{ family.name }} ailesine katıl · FamilyHero{% endblock %}
+{% block content %}
+<section class="auth-shell family-register-shell">
+  <div class="auth-copy">
+    <span class="eyebrow">AİLE DAVETİ</span>
+    <h1>{{ family.name }} ailesine katılın.</h1>
+    <p>Bu bağlantı sizi doğrudan bu ailenin ebeveyn hesabı olarak kaydeder.</p>
+  </div>
+
+  <form class="auth-card family-register-card" method="post" novalidate>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="auth-logo">F</div>
+    <h2>Ebeveyn hesabı oluştur</h2>
+
+    <label for="display_name">Ad soyad</label>
+    <input id="display_name" name="display_name" required maxlength="100" value="{{ form.display_name }}" placeholder="Ör. Ayşe Yılmaz">
+    {% if errors.display_name %}<small class="field-error">{{ errors.display_name }}</small>{% endif %}
+
+    <label for="username">Kullanıcı adı</label>
+    <input id="username" name="username" required minlength="4" maxlength="50" value="{{ form.username }}" autocomplete="username">
+    <small class="field-hint">En az 4 karakter; küçük harf, rakam, nokta, - ve _ içerebilir.</small>
+    {% if errors.username %}<small class="field-error">{{ errors.username }}</small>{% endif %}
+
+    <label for="email">E-posta <span class="optional-label">isteğe bağlı</span></label>
+    <input id="email" type="email" name="email" value="{{ form.email }}" autocomplete="email">
+    {% if errors.email %}<small class="field-error">{{ errors.email }}</small>{% endif %}
+
+    <label for="password">Şifre</label>
+    <input id="password" type="password" name="password" required minlength="10" autocomplete="new-password">
+    <small class="field-hint">En az 10 karakter.</small>
+    {% if errors.password %}<small class="field-error">{{ errors.password }}</small>{% endif %}
+
+    <button type="submit">Aileye katıl</button>
+    <a href="{{ url_for('admin_login') }}">Zaten hesabım var, giriş yap</a>
+  </form>
+</section>
+{% endblock %}

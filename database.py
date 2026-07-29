@@ -736,6 +736,12 @@ def init_db():
         conn.execute('CREATE INDEX IF NOT EXISTS idx_activity_page_views_lookup ON activity_page_views(family_id, user_id, child_id, created_at)')
         conn.execute('CREATE INDEX IF NOT EXISTS idx_activity_page_views_created_at ON activity_page_views(created_at)')
         conn.execute('CREATE INDEX IF NOT EXISTS idx_audit_logs_action_created ON audit_logs(action_key, created_at)')
+        conn.execute('ALTER TABLE families ADD COLUMN IF NOT EXISTS invite_code TEXT')
+        conn.execute(
+            "UPDATE families SET invite_code = substr(md5(random()::text || id::text || clock_timestamp()::text), 1, 10) "
+            "WHERE invite_code IS NULL"
+        )
+        conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_families_invite_code ON families(invite_code)')
         conn.execute('ALTER TABLE children ADD COLUMN IF NOT EXISTS family_id BIGINT')
         conn.execute('ALTER TABLE family_polls ADD COLUMN IF NOT EXISTS family_id BIGINT')
         conn.execute('ALTER TABLE children ADD COLUMN IF NOT EXISTS email TEXT')

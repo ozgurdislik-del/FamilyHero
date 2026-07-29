@@ -4,6 +4,7 @@ from functools import wraps
 import os
 import re
 import json
+import secrets
 from html import escape
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -923,9 +924,26 @@ def super_admin_families():
                            OR LOWER(COALESCE(owner.email,'')) LIKE ?"""
         params = [like, like, like, like]
 
-    result_limit = 50 if search_query else 25
+    page_size = 20
+    page = request.args.get("page", default=1, type=int)
+    if page < 1:
+        page = 1
+
     with get_db() as conn:
         total_count = conn.execute("SELECT COUNT(*) FROM families").fetchone()[0]
+        matching_count = conn.execute(
+            f"""SELECT COUNT(*) FROM families f
+                  LEFT JOIN users owner ON owner.id=f.created_by_user_id
+                  LEFT JOIN family_memberships owner_membership
+                         ON owner_membership.family_id=f.id AND owner_membership.user_id=f.created_by_user_id
+                {where_clause}""",
+            tuple(params),
+        ).fetchone()[0]
+        total_pages = max(1, (matching_count + page_size - 1) // page_size)
+        if page > total_pages:
+            page = total_pages
+        offset = (page - 1) * page_size
+
         families = conn.execute(
             f"""
             SELECT f.id,f.name,f.slug,f.status,f.created_at,
@@ -942,7 +960,7 @@ def super_admin_families():
              GROUP BY f.id,f.name,f.slug,f.status,f.created_at,
                       owner_membership.login_name,owner.email
              ORDER BY f.created_at DESC,f.id DESC
-             LIMIT {result_limit}
+             LIMIT {page_size} OFFSET {offset}
             """,
             tuple(params),
         ).fetchall()
@@ -954,7 +972,10 @@ def super_admin_families():
         errors=errors,
         selected_family_id=session.get("family_id"),
         total_count=total_count,
+        matching_count=matching_count,
         search_query=search_query,
+        page=page,
+        total_pages=total_pages,
     )
 
 
@@ -976,6 +997,385 @@ def super_admin_switch_family(family_id):
     audit_event("platform.family.switched", "family", family["id"])
     flash(f"{family['name']} çalışma alanına geçildi.", "success")
     return redirect(url_for("admin_panel"))
+
+
+def _generate_invite_code():
+    return secrets.token_hex(5)
+
+
+def _username_taken(conn, username):
+    return bool(conn.execute("SELECT 1 FROM users WHERE LOWER(username)=LOWER(?)", (username,)).fetchone())
+
+
+@app.get("/super-admin/username-check")
+@platform_admin_required
+@limiter.limit("30 per minute")
+def super_admin_username_check():
+    username = (request.args.get("username") or "").strip().lower()
+    if not re.fullmatch(r"[a-z0-9_.-]{4,50}", username):
+        return jsonify({"available": False, "reason": "invalid"})
+    with get_db() as conn:
+        taken = _username_taken(conn, username)
+    return jsonify({"available": not taken, "reason": "taken" if taken else None})
+
+
+@app.route("/super-admin/families/<int:family_id>")
+@platform_admin_required
+def super_admin_family_detail(family_id):
+    with get_db() as conn:
+        family = conn.execute(
+            "SELECT id,name,slug,status,invite_code,created_at,created_by_user_id FROM families WHERE id=?",
+            (family_id,),
+        ).fetchone()
+        if not family:
+            abort(404)
+
+        adults = conn.execute(
+            """SELECT fm.id AS membership_id, fm.user_id, fm.login_name, fm.status, fm.joined_at,
+                      u.display_name, u.email, u.username,
+                      STRING_AGG(r.name, ', ' ORDER BY r.name) AS role_names,
+                      BOOL_OR(r.role_key='family_owner') AS is_owner
+                 FROM family_memberships fm
+                 JOIN users u ON u.id=fm.user_id
+                 LEFT JOIN membership_roles mr ON mr.membership_id=fm.id
+                 LEFT JOIN roles r ON r.id=mr.role_id
+                WHERE fm.family_id=? AND fm.member_kind='adult'
+                GROUP BY fm.id, fm.user_id, fm.login_name, fm.status, fm.joined_at, u.display_name, u.email, u.username
+                ORDER BY is_owner DESC, u.display_name""",
+            (family_id,),
+        ).fetchall()
+
+        children = conn.execute(
+            """SELECT fm.id AS membership_id, fm.status AS membership_status,
+                      c.id AS child_id, c.name, c.email, c.child_key, c.avatar_key, c.created_at
+                 FROM family_memberships fm
+                 JOIN children c ON c.id=fm.child_id
+                WHERE fm.family_id=? AND fm.member_kind='child'
+                ORDER BY c.name""",
+            (family_id,),
+        ).fetchall()
+
+        adult_count = sum(1 for a in adults if a["status"] == "active")
+        child_count = len(children)
+
+    invite_url = url_for("family_invite_join", invite_code=family["invite_code"], _external=True)
+
+    return render_template(
+        "super_admin_family_detail.html",
+        family=family,
+        adults=adults,
+        children=children,
+        adult_count=adult_count,
+        child_count=child_count,
+        invite_url=invite_url,
+        avatars=AVATARS,
+    )
+
+
+@app.post("/super-admin/families/<int:family_id>/status")
+@platform_admin_required
+def super_admin_family_set_status(family_id):
+    new_status = request.form.get("status")
+    if new_status not in ("active", "passive"):
+        abort(400)
+    with get_db() as conn:
+        family = conn.execute("SELECT id,name,status FROM families WHERE id=?", (family_id,)).fetchone()
+        if not family:
+            abort(404)
+        conn.execute("UPDATE families SET status=?,updated_at=CURRENT_TIMESTAMP WHERE id=?", (new_status, family_id))
+    audit_event("platform.family.status_changed", "family", family_id, before={"status": family["status"]}, after={"status": new_status})
+    if session.get("family_id") == family_id and new_status != "active":
+        session.pop("family_id", None)
+    flash(
+        f"{family['name']} {'yeniden aktifleştirildi' if new_status == 'active' else 'pasife alındı'}.",
+        "success",
+    )
+    return redirect(url_for("super_admin_family_detail", family_id=family_id))
+
+
+@app.post("/super-admin/families/<int:family_id>/set-owner")
+@platform_admin_required
+def super_admin_family_set_owner(family_id):
+    membership_id = request.form.get("membership_id", type=int)
+    with get_db() as conn:
+        membership = conn.execute(
+            """SELECT fm.id, fm.user_id, fm.status, u.display_name
+                 FROM family_memberships fm JOIN users u ON u.id=fm.user_id
+                WHERE fm.id=? AND fm.family_id=? AND fm.member_kind='adult'""",
+            (membership_id, family_id),
+        ).fetchone()
+        if not membership:
+            abort(404)
+        if membership["status"] != "active":
+            flash("Pasif bir üye aile yöneticisi yapılamaz.", "error")
+            return redirect(url_for("super_admin_family_detail", family_id=family_id))
+
+        owner_role = conn.execute("SELECT id FROM roles WHERE role_key='family_owner'").fetchone()
+        conn.execute(
+            """DELETE FROM membership_roles WHERE role_id=? AND membership_id IN (
+                   SELECT id FROM family_memberships WHERE family_id=?
+               )""",
+            (owner_role["id"], family_id),
+        )
+        assign_membership_role(conn, membership["id"], "family_owner")
+        conn.execute("UPDATE families SET created_by_user_id=? WHERE id=?", (membership["user_id"], family_id))
+
+    audit_event("platform.family.owner_changed", "family", family_id, after={"membership_id": membership_id})
+    flash(f"{membership['display_name']} artık bu ailenin yöneticisi.", "success")
+    return redirect(url_for("super_admin_family_detail", family_id=family_id))
+
+
+@app.post("/super-admin/families/<int:family_id>/parents/add")
+@platform_admin_required
+def super_admin_family_add_parent(family_id):
+    display_name = (request.form.get("display_name") or "").strip()[:100]
+    username = (request.form.get("username") or "").strip().lower()
+    email = (request.form.get("email") or "").strip().lower() or None
+    password = request.form.get("password", "")
+    role_key = request.form.get("role_key", "parent")
+    if role_key not in ("parent", "family_admin"):
+        role_key = "parent"
+
+    errors = []
+    if not display_name:
+        errors.append("Ad soyad zorunludur.")
+    if not re.fullmatch(r"[a-z0-9_.-]{4,50}", username):
+        errors.append("Kullanıcı adı en az 4 karakter olmalı; küçük harf, rakam, nokta, - ve _ içerebilir.")
+    if len(password) < 10:
+        errors.append("Şifre en az 10 karakter olmalıdır.")
+
+    with get_db() as conn:
+        family = conn.execute("SELECT id,name FROM families WHERE id=?", (family_id,)).fetchone()
+        if not family:
+            abort(404)
+        if not errors and _username_taken(conn, username):
+            errors.append("Bu kullanıcı adı platformda zaten kullanılıyor.")
+        if not errors and email and conn.execute("SELECT 1 FROM users WHERE LOWER(email)=LOWER(?)", (email,)).fetchone():
+            errors.append("Bu e-posta adresi zaten kullanılıyor.")
+
+        if errors:
+            for message in errors:
+                flash(message, "error")
+            return redirect(url_for("super_admin_family_detail", family_id=family_id))
+
+        try:
+            user = conn.execute(
+                """INSERT INTO users(email,username,display_name,password_hash,user_type)
+                   VALUES(?,?,?,?,?) RETURNING id""",
+                (email, username, display_name, generate_password_hash(password), "member"),
+            ).fetchone()
+            membership = conn.execute(
+                """INSERT INTO family_memberships(family_id,user_id,member_kind,login_name,status)
+                   VALUES(?,?,?,?,?) RETURNING id""",
+                (family_id, user["id"], "adult", username, "active"),
+            ).fetchone()
+            assign_membership_role(conn, membership["id"], role_key)
+        except Exception:
+            app.logger.exception("Ebeveyn eklenemedi")
+            flash("Ebeveyn eklenemedi. Kullanıcı adı veya e-posta başka bir kayıtta olabilir.", "error")
+            return redirect(url_for("super_admin_family_detail", family_id=family_id))
+
+    audit_event("platform.family.parent_added", "family", family_id, after={"username": username, "role": role_key})
+    flash(f"{display_name} aileye eklendi. Kullanıcı adı: {username}", "success")
+    return redirect(url_for("super_admin_family_detail", family_id=family_id))
+
+
+@app.post("/super-admin/families/<int:family_id>/children/add")
+@platform_admin_required
+def super_admin_family_add_child(family_id):
+    name = (request.form.get("name") or "").strip()[:100]
+    child_key = (request.form.get("child_key") or "").strip().lower()
+    email = (request.form.get("email") or "").strip().lower() or None
+    password = request.form.get("password", "")
+    avatar_key = request.form.get("avatar_key", "scientist")
+    title = (request.form.get("title") or "Süper Kaşif").strip() or "Süper Kaşif"
+    if avatar_key not in AVATARS:
+        avatar_key = "scientist"
+
+    errors = []
+    if not name:
+        errors.append("Ad soyad zorunludur.")
+    if not re.fullmatch(r"[a-z0-9_-]{3,50}", child_key):
+        errors.append("Kullanıcı adı en az 3 karakter olmalı; küçük harf, rakam, - ve _ içerebilir.")
+    if len(password) < 10:
+        errors.append("Şifre en az 10 karakter olmalıdır.")
+
+    with get_db() as conn:
+        family = conn.execute("SELECT id,name FROM families WHERE id=?", (family_id,)).fetchone()
+        if not family:
+            abort(404)
+        if not errors and _username_taken(conn, child_key):
+            errors.append("Bu kullanıcı adı platformda zaten kullanılıyor.")
+        if not errors and email and conn.execute("SELECT 1 FROM users WHERE LOWER(email)=LOWER(?)", (email,)).fetchone():
+            errors.append("Bu e-posta adresi zaten kullanılıyor.")
+
+        if errors:
+            for message in errors:
+                flash(message, "error")
+            return redirect(url_for("super_admin_family_detail", family_id=family_id))
+
+        try:
+            password_hash = generate_password_hash(password)
+            cur = conn.execute(
+                """INSERT INTO children(family_id,child_key,name,email,title,password_hash,avatar_key)
+                   VALUES(?,?,?,?,?,?,?)""",
+                (family_id, child_key, name, email, title, password_hash, avatar_key),
+            )
+            new_child_id = cur.lastrowid
+            copied = copy_family_defaults_to_child(conn, family_id, new_child_id)
+            if not copied["goals"]:
+                for order, (goal_title, criteria, target, bonus) in enumerate(GOAL_SEEDS):
+                    goal_cur = conn.execute(
+                        "INSERT INTO goals(child_id,title,criteria,target_value,bonus_points,sort_order) VALUES(?,?,?,?,?,?)",
+                        (new_child_id, goal_title, criteria, target, bonus, order),
+                    )
+                    conn.execute("INSERT INTO goal_progress(goal_id,current_value) VALUES(?,0)", (goal_cur.lastrowid,))
+
+            user = conn.execute(
+                """INSERT INTO users(email,username,display_name,password_hash,user_type)
+                   VALUES(?,?,?,?,?) RETURNING id""",
+                (email, child_key, name, password_hash, "member"),
+            ).fetchone()
+            membership = conn.execute(
+                """INSERT INTO family_memberships(family_id,user_id,member_kind,child_id,login_name,status)
+                   VALUES(?,?,?,?,?,?) RETURNING id""",
+                (family_id, user["id"], "child", new_child_id, child_key, "active"),
+            ).fetchone()
+            assign_membership_role(conn, membership["id"], "child")
+        except Exception:
+            app.logger.exception("Çocuk eklenemedi (süper admin)")
+            flash("Çocuk eklenemedi. Kullanıcı adı veya e-posta başka bir kayıtta olabilir.", "error")
+            return redirect(url_for("super_admin_family_detail", family_id=family_id))
+
+    audit_event("platform.family.child_added", "child", new_child_id, after={"name": name, "child_key": child_key})
+    flash(f"{name} aileye eklendi.", "success")
+    return redirect(url_for("super_admin_family_detail", family_id=family_id))
+
+
+@app.post("/super-admin/families/<int:family_id>/children/<int:child_id>/edit")
+@platform_admin_required
+def super_admin_family_edit_child(family_id, child_id):
+    name = (request.form.get("name") or "").strip()[:100]
+    email = (request.form.get("email") or "").strip().lower() or None
+    title = (request.form.get("title") or "").strip() or "Süper Kaşif"
+    if not name:
+        flash("Ad soyad zorunludur.", "error")
+        return redirect(url_for("super_admin_family_detail", family_id=family_id))
+
+    with get_db() as conn:
+        child = conn.execute("SELECT id FROM children WHERE id=? AND family_id=?", (child_id, family_id)).fetchone()
+        if not child:
+            abort(404)
+        try:
+            conn.execute(
+                "UPDATE children SET name=?,email=?,title=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                (name, email, title, child_id),
+            )
+            conn.execute(
+                """UPDATE users SET display_name=?,email=?,updated_at=CURRENT_TIMESTAMP
+                   WHERE id=(SELECT user_id FROM family_memberships WHERE child_id=? AND family_id=? LIMIT 1)""",
+                (name, email, child_id, family_id),
+            )
+        except Exception:
+            flash("Bilgiler kaydedilemedi. E-posta başka bir profilde kullanılıyor olabilir.", "error")
+            return redirect(url_for("super_admin_family_detail", family_id=family_id))
+
+    audit_event("platform.family.child_updated", "child", child_id, after={"name": name, "email": email, "title": title})
+    flash(f"{name} bilgileri güncellendi.", "success")
+    return redirect(url_for("super_admin_family_detail", family_id=family_id))
+
+
+@app.post("/super-admin/families/<int:family_id>/children/<int:child_id>/status")
+@platform_admin_required
+def super_admin_family_set_child_status(family_id, child_id):
+    new_status = request.form.get("status")
+    if new_status not in ("active", "disabled"):
+        abort(400)
+    with get_db() as conn:
+        membership = conn.execute(
+            "SELECT id FROM family_memberships WHERE family_id=? AND child_id=? AND member_kind='child'",
+            (family_id, child_id),
+        ).fetchone()
+        if not membership:
+            abort(404)
+        conn.execute("UPDATE family_memberships SET status=? WHERE id=?", (new_status, membership["id"]))
+    audit_event("platform.family.child_status_changed", "child", child_id, after={"status": new_status})
+    flash("Çocuk hesabı " + ("yeniden aktifleştirildi." if new_status == "active" else "pasife alındı."), "success")
+    return redirect(url_for("super_admin_family_detail", family_id=family_id))
+
+
+@app.post("/super-admin/families/<int:family_id>/invite/regenerate")
+@platform_admin_required
+def super_admin_family_regenerate_invite(family_id):
+    new_code = _generate_invite_code()
+    with get_db() as conn:
+        family = conn.execute("SELECT id FROM families WHERE id=?", (family_id,)).fetchone()
+        if not family:
+            abort(404)
+        conn.execute("UPDATE families SET invite_code=? WHERE id=?", (new_code, family_id))
+    audit_event("platform.family.invite_regenerated", "family", family_id)
+    flash("Davet bağlantısı yenilendi; eski bağlantı artık çalışmayacak.", "success")
+    return redirect(url_for("super_admin_family_detail", family_id=family_id))
+
+
+@app.route("/join/<invite_code>", methods=["GET", "POST"])
+@limiter.limit("10 per hour", methods=["POST"])
+def family_invite_join(invite_code):
+    with get_db() as conn:
+        family = conn.execute(
+            "SELECT id,name,status FROM families WHERE invite_code=?", (invite_code,)
+        ).fetchone()
+    if not family or family["status"] != "active":
+        abort(404)
+
+    form = {
+        "display_name": request.form.get("display_name", ""),
+        "username": request.form.get("username", ""),
+        "email": request.form.get("email", ""),
+    }
+    errors = {}
+    if request.method == "POST":
+        display_name = form["display_name"].strip()[:100]
+        username = form["username"].strip().lower()
+        email = form["email"].strip().lower() or None
+        password = request.form.get("password", "")
+
+        if not display_name:
+            errors["display_name"] = "Ad soyad zorunludur."
+        if not re.fullmatch(r"[a-z0-9_.-]{4,50}", username):
+            errors["username"] = "Kullanıcı adı en az 4 karakter olmalı; küçük harf, rakam, nokta, - ve _ içerebilir."
+        if len(password) < 10:
+            errors["password"] = "Şifre en az 10 karakter olmalıdır."
+
+        if not errors:
+            with get_db() as conn:
+                if _username_taken(conn, username):
+                    errors["username"] = "Bu kullanıcı adı zaten kullanılıyor."
+                if email and conn.execute("SELECT 1 FROM users WHERE LOWER(email)=LOWER(?)", (email,)).fetchone():
+                    errors["email"] = "Bu e-posta adresi zaten kullanılıyor."
+
+        if not errors:
+            try:
+                with get_db() as conn:
+                    user = conn.execute(
+                        """INSERT INTO users(email,username,display_name,password_hash,user_type)
+                           VALUES(?,?,?,?,?) RETURNING id""",
+                        (email, username, display_name, generate_password_hash(password), "member"),
+                    ).fetchone()
+                    membership = conn.execute(
+                        """INSERT INTO family_memberships(family_id,user_id,member_kind,login_name,status)
+                           VALUES(?,?,?,?,?) RETURNING id""",
+                        (family["id"], user["id"], "adult", username, "active"),
+                    ).fetchone()
+                    assign_membership_role(conn, membership["id"], "parent")
+                audit_event("platform.family.joined_via_invite", "family", family["id"], after={"username": username})
+                flash(f"{family['name']} ailesine katıldınız. Şimdi giriş yapabilirsiniz.", "success")
+                return redirect(url_for("admin_login"))
+            except Exception:
+                app.logger.exception("Davetle katılma başarısız")
+                errors["username"] = "Kayıt oluşturulamadı; kullanıcı adı veya e-posta başka bir kayıtta olabilir."
+
+    return render_template("family_invite_join.html", family=family, form=form, errors=errors)
 
 
 @app.route("/super-admin/activity-report")

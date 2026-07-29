@@ -95,8 +95,7 @@
       {% if search_query %}<a href="{{ url_for('super_admin_families') }}">Temizle</a>{% endif %}
     </form>
     <div class="family-search-summary">
-      {% if search_query %}<strong>“{{ search_query }}”</strong> için {{ families|length }} sonuç{% else %}Son eklenen {{ families|length }} aile gösteriliyor{% endif %}
-      {% if families|length >= 50 %}<span>İlk 50 sonuç gösteriliyor; aramayı daraltın.</span>{% endif %}
+      {% if search_query %}<strong>“{{ search_query }}”</strong> için {{ matching_count }} sonuç{% else %}Toplam {{ total_count }} aileden {{ matching_count }} tanesi listeleniyor{% endif %}
     </div>
 
     <div class="family-admin-list">
@@ -105,7 +104,8 @@
         <div class="family-admin-icon">{{ family.name[:1]|upper }}</div>
         <div class="family-admin-info">
           <div class="family-admin-title">
-            <strong>{{ family.name }}</strong>
+            <strong><a href="{{ url_for('super_admin_family_detail', family_id=family.id) }}">{{ family.name }}</a></strong>
+            <span class="status-badge {% if family.status=='active' %}active{% else %}passive{% endif %}">{{ 'Aktif' if family.status=='active' else 'Pasif' }}</span>
             {% if family.id == selected_family_id %}<span class="current-family-badge">Aktif çalışma alanı</span>{% endif %}
           </div>
           <code>{{ family.slug }}</code>
@@ -127,6 +127,14 @@
       <div class="empty-family-list">{% if search_query %}Arama kriterine uyan aile bulunamadı.{% else %}Henüz aile bulunmuyor.{% endif %}</div>
       {% endfor %}
     </div>
+
+    {% if total_pages > 1 %}
+    <div class="pagination-bar">
+      {% if page > 1 %}<a href="{{ url_for('super_admin_families', q=search_query, page=page-1) }}">← Önceki</a>{% endif %}
+      <span class="current">{{ page }} / {{ total_pages }}</span>
+      {% if page < total_pages %}<a href="{{ url_for('super_admin_families', q=search_query, page=page+1) }}">Sonraki →</a>{% endif %}
+    </div>
+    {% endif %}
   </section>
 </div>
 

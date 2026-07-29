@@ -1,0 +1,182 @@
+{% extends 'admin_base.html' %}
+{% block title %}{{ family.name }} | FamilyHero{% endblock %}
+{% block breadcrumb %}Süper Admin / Aile Yönetimi / {{ family.name }}{% endblock %}
+{% block content %}
+<section class="page-title-row">
+  <div>
+    <span class="eyebrow">AİLE DETAYI</span>
+    <h1>{{ family.name }}</h1>
+    <p><code>{{ family.slug }}</code> · <span class="status-badge {% if family.status=='active' %}active{% else %}passive{% endif %}">{{ 'Aktif' if family.status=='active' else 'Pasif' }}</span> · {{ adult_count }} yetişkin · {{ child_count }} çocuk</p>
+  </div>
+  <a class="btn" href="{{ url_for('super_admin_families') }}">← Aile listesine dön</a>
+</section>
+
+<section class="content-grid dashboard-grid">
+  <article class="card">
+    <div class="card-header"><div><h2>Aile durumu</h2><p>Aileyi pasife alın veya yeniden aktifleştirin.</p></div></div>
+    <p class="field-hint">Pasif bir ailenin kullanıcıları giriş yapamaz ve süper admin bu aileye çalışma alanı olarak geçemez.</p>
+    <form method="post" action="{{ url_for('super_admin_family_set_status', family_id=family.id) }}" onsubmit="return confirm('{{ 'Bu aile pasife alınsın mı?' if family.status=='active' else 'Bu aile yeniden aktifleştirilsin mi?' }}')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="status" value="{{ 'passive' if family.status=='active' else 'active' }}">
+      <button class="btn {% if family.status=='active' %}danger{% else %}btn-primary{% endif %} full">
+        {{ 'Aileyi pasife al' if family.status=='active' else 'Aileyi yeniden aktifleştir' }}
+      </button>
+    </form>
+  </article>
+
+  <article class="card">
+    <div class="card-header"><div><h2>Aile daveti</h2><p>Yeni bir ebeveynin bu aileye katılması için bağlantıyı paylaşın.</p></div></div>
+    <div class="field-row">
+      <label>Davet bağlantısı<input id="inviteUrlInput" value="{{ invite_url }}" readonly></label>
+      <label>Davet kodu<input value="{{ family.invite_code }}" readonly></label>
+    </div>
+    <div class="form-actions">
+      <button type="button" class="btn" onclick="navigator.clipboard.writeText(document.getElementById('inviteUrlInput').value)">Bağlantıyı kopyala</button>
+      <form method="post" action="{{ url_for('super_admin_family_regenerate_invite', family_id=family.id) }}" onsubmit="return confirm('Eski davet bağlantısı geçersiz olacak, emin misiniz?')">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn">Bağlantıyı yenile</button>
+      </form>
+    </div>
+  </article>
+</section>
+
+<section class="card">
+  <div class="card-header">
+    <div><h2>Ebeveynler / yöneticiler</h2><p>Aile yöneticisini değiştirin veya yeni bir ebeveyn ekleyin.</p></div>
+  </div>
+  <div class="table-scroll">
+    <table class="data-table">
+      <thead><tr><th>Ad soyad</th><th>Kullanıcı adı</th><th>E-posta</th><th>Rol</th><th>Durum</th><th></th></tr></thead>
+      <tbody>
+        {% for a in adults %}
+        <tr>
+          <td>{{ a.display_name }}</td>
+          <td>{{ a.username }}</td>
+          <td>{{ a.email or '—' }}</td>
+          <td>{{ a.role_names or '—' }}</td>
+          <td><span class="status-badge {% if a.status=='active' %}active{% else %}passive{% endif %}">{{ 'Aktif' if a.status=='active' else 'Pasif' }}</span></td>
+          <td>
+            {% if not a.is_owner and a.status=='active' %}
+            <form method="post" action="{{ url_for('super_admin_family_set_owner', family_id=family.id) }}" onsubmit="return confirm('{{ a.display_name }} aile yöneticisi yapılsın mı?')">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="membership_id" value="{{ a.membership_id }}">
+              <button class="btn">Yönetici yap</button>
+            </form>
+            {% elif a.is_owner %}<span class="field-hint">Aile yöneticisi</span>{% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6"><div class="empty-state"><strong>Kayıt yok</strong></div></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <details class="create-pop">
+    <summary>＋ Yeni ebeveyn ekle</summary>
+    <form method="post" action="{{ url_for('super_admin_family_add_parent', family_id=family.id) }}" class="modern-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="field-row">
+        <label>Ad soyad<input name="display_name" required maxlength="100"></label>
+        <label>Kullanıcı adı<input name="username" class="js-username-check" required minlength="4" maxlength="50" autocomplete="off"></label>
+      </div>
+      <div class="field-row">
+        <label>E-posta <span class="optional-label">isteğe bağlı</span><input name="email" type="email"></label>
+        <label>Şifre<input name="password" type="password" required minlength="10" autocomplete="new-password"></label>
+      </div>
+      <div class="field-row">
+        <label>Rol
+          <select name="role_key">
+            <option value="parent">Ebeveyn</option>
+            <option value="family_admin">Aile Yöneticisi (Ek)</option>
+          </select>
+        </label>
+        <span class="username-check-result"></span>
+      </div>
+      <button class="btn btn-primary full">Ebeveyni ekle</button>
+    </form>
+  </details>
+</section>
+
+<section class="card">
+  <div class="card-header">
+    <div><h2>Çocuk hesapları</h2><p>Yeni çocuk hesabı oluşturun, bilgilerini düzenleyin veya pasife alın.</p></div>
+  </div>
+  <div class="table-scroll">
+    <table class="data-table">
+      <thead><tr><th>Ad soyad</th><th>Kullanıcı adı</th><th>E-posta</th><th>Durum</th><th></th></tr></thead>
+      <tbody>
+        {% for c in children %}
+        <tr>
+          <td>{{ avatars.get(c.avatar_key,'🙂') }} {{ c.name }}</td>
+          <td>{{ c.child_key }}</td>
+          <td>{{ c.email or '—' }}</td>
+          <td><span class="status-badge {% if c.membership_status=='active' %}active{% else %}passive{% endif %}">{{ 'Aktif' if c.membership_status=='active' else 'Pasif' }}</span></td>
+          <td>
+            <details>
+              <summary class="btn">Düzenle</summary>
+              <form method="post" action="{{ url_for('super_admin_family_edit_child', family_id=family.id, child_id=c.child_id) }}" class="modern-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <label>Ad soyad<input name="name" value="{{ c.name }}" required></label>
+                <label>E-posta<input name="email" type="email" value="{{ c.email or '' }}"></label>
+                <button class="btn btn-primary full">Kaydet</button>
+              </form>
+            </details>
+            <form method="post" action="{{ url_for('super_admin_family_set_child_status', family_id=family.id, child_id=c.child_id) }}" onsubmit="return confirm('{{ 'Bu çocuk hesabı pasife alınsın mı?' if c.membership_status=='active' else 'Bu çocuk hesabı yeniden aktifleştirilsin mi?' }}')">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="status" value="{{ 'disabled' if c.membership_status=='active' else 'active' }}">
+              <button class="btn {% if c.membership_status=='active' %}danger{% endif %}">{{ 'Pasife al' if c.membership_status=='active' else 'Aktifleştir' }}</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5"><div class="empty-state"><strong>Kayıt yok</strong></div></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <details class="create-pop">
+    <summary>＋ Yeni çocuk hesabı ekle</summary>
+    <form method="post" action="{{ url_for('super_admin_family_add_child', family_id=family.id) }}" class="modern-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="field-row">
+        <label>Ad soyad<input name="name" required maxlength="100"></label>
+        <label>Kullanıcı adı<input name="child_key" class="js-username-check" required minlength="3" maxlength="50" autocomplete="off"></label>
+      </div>
+      <div class="field-row">
+        <label>E-posta <span class="optional-label">isteğe bağlı</span><input name="email" type="email"></label>
+        <label>Şifre<input name="password" type="password" required minlength="10" autocomplete="new-password"></label>
+      </div>
+      <div class="field-row">
+        <label>Unvan<input name="title" value="Süper Kaşif"></label>
+        <span class="username-check-result"></span>
+      </div>
+      <button class="btn btn-primary full">Çocuğu ekle</button>
+    </form>
+  </details>
+</section>
+
+<script>
+(function(){
+  const endpoint = "{{ url_for('super_admin_username_check') }}";
+  let timer;
+  document.querySelectorAll('.js-username-check').forEach(function(input){
+    input.addEventListener('input', function(){
+      clearTimeout(timer);
+      const resultEl = input.closest('form').querySelector('.username-check-result');
+      const value = input.value.trim();
+      if(!resultEl) return;
+      if(value.length < 3){ resultEl.textContent = ''; return; }
+      timer = setTimeout(function(){
+        fetch(endpoint + '?username=' + encodeURIComponent(value))
+          .then(function(r){ return r.json(); })
+          .then(function(data){
+            resultEl.textContent = data.available ? '✓ Kullanılabilir' : '✗ Kullanılamaz';
+            resultEl.style.color = data.available ? 'var(--success)' : 'var(--danger)';
+          })
+          .catch(function(){ resultEl.textContent = ''; });
+      }, 400);
+    });
+  });
+})();
+</script>
+{% endblock %}
